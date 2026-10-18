@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Hickling",
+    "slug": "hickling-fitness",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "hickling",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#141518",
+    "platforms": ["ios", "web"],
+    "ios": {
+      "bundleIdentifier": "com.aistudyhub.hicklingfitness",
+      "supportsTablet": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#141518",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
