@@ -35,6 +35,7 @@ export function useCoachConversation() {
       await sendTurn(
         {
           previousResponseId: coach.lastResponseId,
+          pendingToolOutputs: coach.pendingToolOutputs,
           event,
           snapshot: buildSnapshot(useActivities.getState().activities, coach.profile, today),
         },
@@ -47,7 +48,7 @@ export function useCoachConversation() {
           } else if (line.type === 'done') {
             const state = useCoach.getState();
             state.mergeProfile(line.profile);
-            state.setLastResponseId(line.responseId);
+            state.setThread(line.responseId, line.pendingToolOutputs);
             state.addMessage({
               id: newMessageId(),
               role: 'coach',
@@ -58,7 +59,7 @@ export function useCoachConversation() {
             });
             if (line.proposals.length) haptics.success();
           } else if (line.type === 'error') {
-            if (line.resetThread) useCoach.getState().setLastResponseId(null);
+            if (line.resetThread) useCoach.getState().setThread(null, []);
             throw new Error(line.message);
           }
         },

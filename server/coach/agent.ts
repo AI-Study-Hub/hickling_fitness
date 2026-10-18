@@ -96,7 +96,8 @@ export function createCoachAgent(): Agent<CoachContext> {
     name: 'Coach',
     instructions: (rc) => buildInstructions(rc.context.snapshot),
     tools: [getActivities, updateAthleteProfile, offerChoices, proposePlanChanges],
-    // Stop as soon as choices are shown so the athlete can answer.
+    // Stop as soon as choices are shown so the athlete can answer. OpenAI hasn't seen that tool's output
+    // yet, so the handler returns it as `pendingToolOutputs` and the next turn sends it first.
     toolUseBehavior: { stopAtToolNames: ['offer_choices'] },
   });
 }

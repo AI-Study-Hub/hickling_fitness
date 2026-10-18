@@ -3,7 +3,7 @@ import { assistantMessage, functionCall, ScriptedModel } from '@openai/agents/te
 
 import type { PlanAction, Snapshot, StreamLine } from '../../src/coach/contract';
 import { createCoachAgent, createRunner } from './agent';
-import { createCoachHandler, eventToInput } from './handler';
+import { createCoachHandler, danglingCallId, eventToInput } from './handler';
 import { buildInstructions } from './instructions';
 import { validateActions } from './validate';
 
@@ -119,6 +119,15 @@ describe('instructions', () => {
   });
 });
 
+describe('danglingCallId', () => {
+  it('reads the call id from OpenAI\'s error', () => {
+    expect(danglingCallId(new Error('400 No tool output found for function call call_8A38zlFXIe6P30WXxzBKklU3.'))).toBe(
+      'call_8A38zlFXIe6P30WXxzBKklU3',
+    );
+    expect(danglingCallId(new Error('rate limited'))).toBeNull();
+  });
+});
+
 describe('eventToInput', () => {
   it('describes proposal decisions for the model', () => {
     expect(eventToInput({ kind: 'proposal_decision', proposalId: 'p1', decision: 'accepted', applied: 5 })).toMatch(
@@ -181,7 +190,7 @@ describe('coach turn', () => {
     model.assertComplete();
   });
 
-  it('stops the turn when offering choices', async () => {
+  it('stops at offer_choices and hands back the output OpenAI has not seen', async () => {
     const model = new ScriptedModel([
       [
         assistantMessage('Great — a couple of questions first.'),
@@ -196,6 +205,34 @@ describe('coach turn', () => {
     const d = done(lines);
     expect(d.choices).toEqual({ question: 'How many days a week can you train?', options: ['3', '4', '5', '6'], multiSelect: false });
     expect(d.text).toMatch(/couple of questions/);
+    expect(d.pendingToolOutputs).toEqual([
+      { type: 'function_call_result', name: 'offer_choices', callId: 'c1', output: 'Options shown to the athlete.' },
+    ]);
+    model.assertComplete();
+  });
+
+  it('sends pending tool outputs before the answer on the next turn', async () => {
+    const model = new ScriptedModel([[assistantMessage('Five days — great.')]]);
+    const pending = [{ type: 'function_call_result', name: 'offer_choices', callId: 'c1', output: 'Options shown to the athlete.' }];
+    const { lines } = await turn(model, { ...message('5'), previousResponseId: 'resp_1', pendingToolOutputs: pending });
+    expect(done(lines).pendingToolOutputs).toEqual([]);
+    const input = JSON.stringify(model.calls[0].request.input);
+    expect(input).toMatch(/function_call_result.*"callId":"c1".*"text":"5"/);
+    expect(model.calls[0].request.previousResponseId).toBe('resp_1');
+  });
+
+  it('repairs a conversation left with an unanswered tool call', async () => {
+    const model = new ScriptedModel([
+      { type: 'error', error: new Error('400 No tool output found for function call call_8A38zlFXIe6P30WXxzBKklU3.') },
+      [assistantMessage('Five days it is.')],
+    ]);
+    const { lines } = await turn(model, { ...message('5'), previousResponseId: 'resp_old' });
+    expect(lines.some((l) => l.type === 'error')).toBe(false);
+    expect(done(lines).text).toBe('Five days it is.');
+    const retry = model.calls[1].request;
+    expect(retry.previousResponseId).toBe('resp_old');
+    expect(JSON.stringify(retry.input)).toMatch(/function_call_result.*call_8A38zlFXIe6P30WXxzBKklU3/);
+    expect(JSON.stringify(retry.input)).toMatch(/"text":"5"/);
     model.assertComplete();
   });
 

@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   errorText: {
-    flex: 1,
+    flexShrink: 1,
     color: Colors.textMuted,
     fontSize: 14,
     lineHeight: 19,

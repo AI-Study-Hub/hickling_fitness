@@ -1,6 +1,11 @@
-import type { Agent, Runner } from '@openai/agents';
+import { user, type Agent, type AgentInputItem, type Runner } from '@openai/agents';
 
-import { TurnRequestSchema, type StreamLine, type TurnEvent } from '../../src/coach/contract';
+import {
+  TurnRequestSchema,
+  type PendingToolOutput,
+  type StreamLine,
+  type TurnEvent,
+} from '../../src/coach/contract';
 import { createContext, type CoachContext } from './agent';
 
 const WORKING_LABELS: Record<string, string> = {
@@ -22,8 +27,39 @@ export function eventToInput(event: TurnEvent): string {
   }`;
 }
 
-const isStaleThreadError = (error: unknown) =>
-  /previous[_ ]response|response.*not found/i.test(error instanceof Error ? error.message : String(error));
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const isStaleThreadError = (error: unknown) => /previous[_ ]response|response.*not found/i.test(errorText(error));
+
+/** Call id from OpenAI's "No tool output found for function call call_…" (a turn ended mid tool call). */
+export function danglingCallId(error: unknown): string | null {
+  return errorText(error).match(/No tool output found for function call (call_[A-Za-z0-9_-]+)/)?.[1] ?? null;
+}
+
+const MAX_REPAIRS = 3;
+
+type RunItems = { type: string; rawItem?: unknown }[];
+
+/**
+ * Tool outputs at the very end of a run that never went back to the model — the run stopped at a
+ * `stopAtToolNames` tool. They must be sent before the next turn's input.
+ */
+export function trailingToolOutputs(items: RunItems): PendingToolOutput[] {
+  const pending: PendingToolOutput[] = [];
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.type === 'tool_call_item') continue;
+    if (item.type !== 'tool_call_output_item') break;
+    const raw = item.rawItem as { type?: string; name?: string; callId?: string; output?: unknown };
+    if (raw.type !== 'function_call_result' || !raw.name || !raw.callId) continue;
+    const output =
+      typeof raw.output === 'string'
+        ? raw.output
+        : ((raw.output as { text?: string } | undefined)?.text ?? JSON.stringify(raw.output));
+    pending.unshift({ type: 'function_call_result', name: raw.name, callId: raw.callId, output });
+  }
+  return pending;
+}
 
 interface Options {
   agent: Agent<CoachContext>;
@@ -43,7 +79,7 @@ export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Opti
     if (!parsed.success) {
       return Response.json({ error: 'Bad request', issues: parsed.error.issues.slice(0, 5) }, { status: 400 });
     }
-    const { event, snapshot, previousResponseId } = parsed.data;
+    const { event, snapshot, previousResponseId, pendingToolOutputs } = parsed.data;
     const encoder = new TextEncoder();
 
     const body = new ReadableStream<Uint8Array>({
@@ -52,8 +88,9 @@ export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Opti
         const context = createContext(snapshot);
         let text = '';
         let pendingBreak = false;
+        let pendingAfter: PendingToolOutput[] = [];
 
-        const runOnce = async (input: string, prevId: string | null) => {
+        const runOnce = async (input: string | AgentInputItem[], prevId: string | null) => {
           const result = await runner.run(agent, input, {
             stream: true,
             context,
@@ -78,31 +115,53 @@ export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Opti
             }
           }
           await result.completed;
+          pendingAfter = trailingToolOutputs(result.newItems as RunItems);
           return result.lastResponseId ?? null;
         };
 
         try {
-          let responseId: string | null;
-          try {
-            responseId = await runOnce(eventToInput(event), previousResponseId);
-          } catch (error) {
-            if (!previousResponseId || text || !isStaleThreadError(error)) throw error;
-            // OpenAI no longer has the earlier conversation: carry on from the profile and calendar.
-            responseId = await runOnce(
-              `[App] Earlier messages are unavailable; rely on the profile and calendar.\n\n${eventToInput(event)}`,
-              null,
-            );
+          const input = eventToInput(event);
+          // Outputs for tool calls an earlier turn left unanswered (see danglingCallId), sent with this turn.
+          const repairs: AgentInputItem[] = [];
+          const carried: AgentInputItem[] = previousResponseId
+            ? (pendingToolOutputs ?? []).map((p) => ({ ...p, status: 'completed' as const }))
+            : [];
+          let responseId: string | null = null;
+          for (;;) {
+            try {
+              const prefix = [...carried, ...repairs];
+              responseId = await runOnce(prefix.length ? [...prefix, user(input)] : input, previousResponseId);
+              break;
+            } catch (error) {
+              if (!previousResponseId || text) throw error;
+              const callId = danglingCallId(error);
+              if (callId && repairs.length < MAX_REPAIRS) {
+                repairs.push({
+                  type: 'function_call_result',
+                  name: 'offer_choices',
+                  callId,
+                  status: 'completed',
+                  output: 'The options were shown; the athlete replies below.',
+                });
+                continue;
+              }
+              if (!isStaleThreadError(error)) throw error;
+              // OpenAI no longer has the earlier conversation: carry on from the profile and calendar.
+              responseId = await runOnce(`[App] Earlier messages are unavailable; rely on the profile and calendar.\n\n${input}`, null);
+              break;
+            }
           }
           send({
             type: 'done',
             responseId,
+            pendingToolOutputs: pendingAfter,
             text,
             proposals: context.proposals,
             choices: context.choices,
             profile: context.profile,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorText(error);
           console.error('[coach] turn failed:', message);
           send({ type: 'error', message, resetThread: isStaleThreadError(error) });
         } finally {

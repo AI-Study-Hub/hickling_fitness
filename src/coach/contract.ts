@@ -147,8 +147,21 @@ export const TurnEventSchema = z.union([
 ]);
 export type TurnEvent = z.infer<typeof TurnEventSchema>;
 
+/**
+ * Output of a tool OpenAI hasn't seen yet: the turn stopped right after the tool ran (offer_choices ends the
+ * turn). The app keeps it with `previousResponseId` and sends it back with the next turn.
+ */
+export const PendingToolOutputSchema = z.object({
+  type: z.literal('function_call_result'),
+  name: z.string(),
+  callId: z.string(),
+  output: z.string(),
+});
+export type PendingToolOutput = z.infer<typeof PendingToolOutputSchema>;
+
 export const TurnRequestSchema = z.object({
   previousResponseId: z.string().nullable(),
+  pendingToolOutputs: z.array(PendingToolOutputSchema).max(10).nullish(),
   event: TurnEventSchema,
   snapshot: SnapshotSchema,
 });
@@ -167,6 +180,7 @@ export type StreamLine =
   | {
       type: 'done';
       responseId: string | null;
+      pendingToolOutputs: PendingToolOutput[];
       text: string;
       proposals: Proposal[];
       choices: Choices | null;

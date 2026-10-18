@@ -41,7 +41,11 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 - **Contract** (`src/coach/contract.ts`, zod) is shared by app and server — relative imports only, no RN
   imports. Tool/proposal schemas use `.nullable()` (OpenAI strict mode). The app sends a snapshot (last
   8 weeks + future activities, profile, today) every turn; the server is stateless. Conversation state is
-  `previousResponseId`, stored on the phone (`src/store/coach.ts`).
+  `previousResponseId` + `pendingToolOutputs`, stored on the phone (`src/store/coach.ts`).
+- `offer_choices` is a `stopAtToolNames` tool, so OpenAI never sees its output in that turn. The handler
+  returns such outputs as `pendingToolOutputs` and the next turn sends them before the user message —
+  without that OpenAI rejects the turn ("No tool output found for function call"). The handler also
+  repairs threads that hit that error by supplying the missing output once.
 - **Proposals are data**: tools never write to the phone. The app applies a proposal only on Accept
   (`src/coach/apply.ts`, re-validated against the current calendar; completed sessions and past dates are
   never touched), then tells the coach. Coach sessions have `source: 'coach'` and a `workout`.

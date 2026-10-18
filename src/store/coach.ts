@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { AthleteProfilePatch, Choices, Proposal } from '@/coach/contract';
+import type { AthleteProfilePatch, Choices, PendingToolOutput, Proposal } from '@/coach/contract';
 
 export type ProposalStatus = 'pending' | 'accepted' | 'declined';
 
@@ -32,11 +32,13 @@ interface CoachState {
   profile: AthleteProfilePatch;
   /** OpenAI response id that continues the conversation; null starts a new one. */
   lastResponseId: string | null;
+  /** Tool outputs OpenAI hasn't seen yet (after offer_choices); sent first on the next turn. */
+  pendingToolOutputs: PendingToolOutput[];
   messages: CoachMessage[];
   addMessage: (message: CoachMessage) => void;
   updateMessage: (id: string, patch: Partial<CoachMessage>) => void;
   updateProposal: (messageId: string, proposalId: string, patch: Partial<ProposalView>) => void;
-  setLastResponseId: (id: string | null) => void;
+  setThread: (lastResponseId: string | null, pendingToolOutputs: PendingToolOutput[]) => void;
   mergeProfile: (patch: AthleteProfilePatch) => void;
   /** Starts a new conversation; the profile is kept. */
   newConversation: () => void;
@@ -49,6 +51,7 @@ export const useCoach = create<CoachState>()(
     (set) => ({
       profile: {},
       lastResponseId: null,
+      pendingToolOutputs: [],
       messages: [],
       addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
       updateMessage: (id, patch) =>
@@ -63,9 +66,9 @@ export const useCoach = create<CoachState>()(
               : m,
           ),
         })),
-      setLastResponseId: (id) => set({ lastResponseId: id }),
+      setThread: (lastResponseId, pendingToolOutputs) => set({ lastResponseId, pendingToolOutputs }),
       mergeProfile: (patch) => set((s) => ({ profile: { ...s.profile, ...patch } })),
-      newConversation: () => set({ messages: [], lastResponseId: null }),
+      newConversation: () => set({ messages: [], lastResponseId: null, pendingToolOutputs: [] }),
     }),
     {
       name: 'hickling.coach',
