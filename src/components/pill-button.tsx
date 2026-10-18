@@ -33,7 +33,7 @@ export function PillButton({ label, onPress, icon, disabled, style }: Props) {
 
 const styles = StyleSheet.create({
   button: {
-    height: 54,
+    height: 50,
     borderRadius: Radius.pill,
     backgroundColor: Colors.light,
     flexDirection: 'row',
@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: Colors.textOnLight,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
   },
 });

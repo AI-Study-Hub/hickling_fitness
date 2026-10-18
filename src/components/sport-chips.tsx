@@ -32,7 +32,7 @@ export function SportChips({ selectedId, onSelect, inset = 16 }: Props) {
             style={[styles.chip, selected && styles.chipSelected]}>
             <MaterialCommunityIcons
               name={sport.icon}
-              size={18}
+              size={16}
               color={selected ? Colors.textOnLight : Colors.textMuted}
             />
             <Text style={[styles.label, selected && styles.labelSelected]}>{sport.name}</Text>
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 14,
-    height: 36,
+    height: 34,
     borderRadius: Radius.pill,
     backgroundColor: Colors.surface,
     borderWidth: 1,
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: Colors.textMuted,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   labelSelected: {

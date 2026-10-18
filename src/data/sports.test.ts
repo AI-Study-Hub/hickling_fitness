@@ -16,11 +16,24 @@ describe('sports catalogue', () => {
     }
   });
 
-  it('uses valid gradient colours', () => {
+  it('uses valid colours', () => {
     for (const workout of ALL_WORKOUT_TYPES) {
       expect(workout.gradient).toHaveLength(2);
       workout.gradient.forEach((c) => expect(c).toMatch(HEX));
+      expect(workout.color).toMatch(HEX);
     }
+    SPORTS.forEach((sport) => expect(sport.color).toMatch(HEX));
+  });
+
+  it('offers only the five sports in use', () => {
+    expect(SPORTS.map((s) => s.id)).toEqual(['run', 'ride', 'swim', 'strength', 'hyrox']);
+    expect(getSport('hyrox')?.workouts.map((w) => w.name)).toEqual(
+      expect.arrayContaining(['Combo', 'AMRAP', 'EMOM', 'METCON']),
+    );
+  });
+
+  it('colours Easy Run green to match its tile', () => {
+    expect(getWorkoutType('run.easy')?.color).toBe('#5CBF22');
   });
 
   it('keeps Runna run types first', () => {
@@ -38,11 +51,11 @@ describe('sports catalogue', () => {
   it('looks up sports and workout types', () => {
     expect(getSport('swim')?.distanceUnit).toBe('m');
     expect(getWorkoutType('run.tempo')?.sport.id).toBe('run');
-    expect(getWorkoutType('nope')).toBeUndefined();
+    expect(getWorkoutType('team.football')).toBeUndefined();
   });
 
   it('searches by workout or sport name', () => {
-    expect(searchWorkoutTypes('pad').map((w) => w.id)).toEqual(['racket.padel']);
+    expect(searchWorkoutTypes('amrap').map((w) => w.id)).toEqual(['hyrox.amrap']);
     expect(searchWorkoutTypes('SWIM').every((w) => w.sport.id === 'swim')).toBe(true);
     expect(searchWorkoutTypes('   ')).toEqual([]);
   });

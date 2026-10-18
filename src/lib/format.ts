@@ -34,3 +34,25 @@ export function formatActivitySummary(
   if (durationSec) parts.push(formatDuration(durationSec));
   return parts.join(' • ');
 }
+
+/** Totals-style duration without seconds: 13500 → "3h 45m", 2700 → "45m", 20 → "0m". */
+export function formatDurationShort(totalSeconds: number): string {
+  const minutes = Math.round(Math.max(0, totalSeconds) / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** Run pace "5:12 /km", swim pace "1:45 /100m", ride speed "28.4 km/h". */
+export function formatPace(
+  { distanceKm, durationSec }: { distanceKm?: number; durationSec?: number },
+  sportId: string,
+): string | undefined {
+  if (!distanceKm || !durationSec) return undefined;
+  if (sportId === 'ride') return `${(distanceKm / (durationSec / 3600)).toFixed(1)} km/h`;
+  const perUnit = sportId === 'swim' ? durationSec / (distanceKm * 10) : durationSec / distanceKm;
+  const total = Math.round(perUnit);
+  const label = sportId === 'swim' ? '/100m' : '/km';
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} ${label}`;
+}

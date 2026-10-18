@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Colors, Type } from '@/constants/theme';
 import { Profile } from '@/constants/profile';
 
-export function Avatar({ size = 44 }: { size?: number }) {
+export function Avatar({ size = 40 }: { size?: number }) {
   return (
     <LinearGradient
       colors={[Colors.brand, '#7A3E4F']}
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    height: 64,
+    height: 58,
   },
   side: {
     width: 96,
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   wordmark: {
     color: Colors.text,
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '800',
     letterSpacing: -1,
   },

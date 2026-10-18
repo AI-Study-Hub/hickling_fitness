@@ -1,10 +1,11 @@
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ACTIVITY_CARD_HEIGHT, ActivityCard } from '@/components/activity-card';
+import { ACTIVITY_CARD_HEIGHT, ACTIVITY_CARD_WIDTH, ActivityCard } from '@/components/activity-card';
 import { ScreenHeader } from '@/components/screen-header';
 import { Colors } from '@/constants/theme';
 import {
@@ -18,31 +19,51 @@ import {
   weekdayIndex,
   type ISODate,
 } from '@/lib/dates';
+import { formatDistance, formatDurationShort } from '@/lib/format';
+import { totalsBySport } from '@/lib/progress';
 import { type Activity, useActivities, useActivitiesByDate } from '@/store/activities';
 
 const WEEKS_BEFORE = 26;
 const INITIAL_WEEKS_AFTER = 52;
-const WEEK_GAP = 16;
-const WEEK_TITLE_HEIGHT = 68;
-const DAY_MIN_HEIGHT = 68;
-const DAY_PADDING = 8;
-const CARD_GAP = 6;
+const WEEK_GAP = 14;
+const WEEK_TITLE_HEIGHT = 62;
+const DAY_HEIGHT = ACTIVITY_CARD_HEIGHT + 16;
+const REST_DAY_HEIGHT = 44;
 
 type Row =
-  | { kind: 'week'; key: string; weekStart: ISODate }
-  | { kind: 'day'; key: string; date: ISODate; activities: Activity[] };
+  | { kind: 'week'; key: string; weekStart: ISODate; activities: Activity[]; past: boolean }
+  | { kind: 'day'; key: string; date: ISODate; activities: Activity[]; past: boolean; restDay: boolean };
 
-function dayRowHeight(activityCount: number): number {
-  if (activityCount === 0) return DAY_MIN_HEIGHT;
-  const content = DAY_PADDING * 2 + activityCount * ACTIVITY_CARD_HEIGHT + (activityCount - 1) * CARD_GAP;
-  return Math.max(DAY_MIN_HEIGHT, content);
-}
-
-const rowHeight = (row: Row) =>
-  row.kind === 'week' ? WEEK_GAP + WEEK_TITLE_HEIGHT : dayRowHeight(row.activities.length);
+const rowHeight = (row: Row) => {
+  if (row.kind === 'week') return WEEK_GAP + WEEK_TITLE_HEIGHT;
+  return row.restDay ? REST_DAY_HEIGHT : DAY_HEIGHT;
+};
 
 function openNew(date: ISODate) {
   router.push({ pathname: '/activity/new', params: { date } });
+}
+
+/** "Total:" followed by one figure per sport in the week, e.g. run 24.6 km · strength 1h. */
+function WeekTotals({ activities }: { activities: Activity[] }) {
+  const bySport = totalsBySport(activities);
+  if (bySport.length === 0) return null;
+  return (
+    <View style={styles.totals}>
+      <Text style={styles.totalsLabel}>Total:</Text>
+      {bySport.map(({ sport, totals }) => (
+        <View key={sport.id} style={styles.totalItem}>
+          <MaterialCommunityIcons name={sport.icon} size={13} color={sport.color} />
+          <Text style={styles.totalValue}>
+            {sport.distanceUnit && totals.distanceKm > 0
+              ? formatDistance(totals.distanceKm, sport.distanceUnit)
+              : totals.durationSec > 0
+                ? formatDurationShort(totals.durationSec)
+                : `${totals.count}×`}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 export default function CalendarScreen() {
@@ -54,12 +75,21 @@ export default function CalendarScreen() {
 
   const { rows, offsets, anchorIndex } = useMemo(() => {
     const result: Row[] = [];
-    let weekStart = addDays(startOfWeek(today), -7 * WEEKS_BEFORE);
+    const currentWeek = startOfWeek(today);
+    let weekStart = addDays(currentWeek, -7 * WEEKS_BEFORE);
     for (let w = 0; w < WEEKS_BEFORE + weeksAfter; w++) {
-      result.push({ kind: 'week', key: `w${weekStart}`, weekStart });
-      for (let d = 0; d < 7; d++) {
-        const date = addDays(weekStart, d);
-        result.push({ kind: 'day', key: date, date, activities: byDate.get(date) ?? [] });
+      const past = weekStart < currentWeek;
+      const days = Array.from({ length: 7 }, (_, d) => addDays(weekStart, d));
+      result.push({
+        kind: 'week',
+        key: `w${weekStart}`,
+        weekStart,
+        past,
+        activities: days.flatMap((date) => byDate.get(date) ?? []),
+      });
+      for (const date of days) {
+        const activities = byDate.get(date) ?? [];
+        result.push({ kind: 'day', key: date, date, activities, past, restDay: date < today && !activities.length });
       }
       weekStart = addDays(weekStart, 7);
     }
@@ -80,66 +110,86 @@ export default function CalendarScreen() {
     Alert.alert(
       'Calendar tips',
       '• Tap + Add on any day to schedule a session.\n' +
+        '• Swipe sideways when a day has more than one session.\n' +
         '• Tap a session to edit it, move it to another day, or delete it.\n' +
         '• Tap the circle on a session to mark it done.\n' +
         '• Tap the date icon to jump back to today.',
     );
 
   const renderRow = ({ item }: { item: Row }) => {
+    const tint = item.past && styles.pastWeek;
+
     if (item.kind === 'week') {
       return (
         <View style={{ height: rowHeight(item) }}>
           <View style={styles.weekGap} />
-          <View style={styles.weekTitleRow}>
+          <View style={[styles.weekTitleRow, tint]}>
             <Text style={styles.weekTitle}>{formatWeekRange(item.weekStart)}</Text>
+            <WeekTotals activities={item.activities} />
           </View>
         </View>
       );
     }
 
-    const { date, activities } = item;
+    const { date, activities, restDay } = item;
     const isToday = date === today;
     return (
-      <View style={[styles.dayRow, { height: rowHeight(item) }]}>
-        <View style={styles.dayLabelCol}>
+      <View style={[styles.dayRow, { height: rowHeight(item) }, tint]}>
+        <View style={[styles.dayLabelCol, restDay && styles.dayLabelColCompact]}>
           <Text style={styles.dayLabel}>{WEEKDAYS_SHORT[weekdayIndex(date)]}</Text>
-          <View style={[styles.dateCircle, isToday && styles.todayCircle]}>
-            <Text style={[styles.dateText, date < today && styles.pastDate, isToday && styles.todayDate]}>
+          <View style={[styles.dateCircle, isToday && styles.todayCircle, restDay && styles.dateCompact]}>
+            <Text
+              style={[
+                styles.dateText,
+                date < today && styles.pastDate,
+                isToday && styles.todayDate,
+                restDay && styles.dateTextCompact,
+              ]}>
               {dayOfMonth(date)}
             </Text>
           </View>
         </View>
 
-        {activities.length === 0 ? (
+        {restDay ? (
+          <Pressable
+            onPress={() => openNew(date)}
+            accessibilityRole="button"
+            accessibilityLabel={`Rest day, ${formatLongDate(date)}. Add a session`}
+            style={styles.restDay}>
+            <Text style={styles.restDayText}>Rest day</Text>
+          </Pressable>
+        ) : activities.length === 0 ? (
           <Pressable
             onPress={() => openNew(date)}
             accessibilityRole="button"
             accessibilityLabel={`Add session on ${formatLongDate(date)}`}
             style={styles.addButton}>
-            <Ionicons name="add" size={30} color={Colors.textMuted} />
+            <Ionicons name="add" size={24} color={Colors.textMuted} />
             <Text style={styles.addText}>Add</Text>
           </Pressable>
         ) : (
-          <>
-            <View style={styles.cards}>
-              {activities.map((activity) => (
-                <ActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  onPress={() => router.push({ pathname: '/activity/[id]', params: { id: activity.id } })}
-                  onToggleCompleted={() => toggleCompleted(activity.id)}
-                />
-              ))}
-            </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.carousel}
+            contentContainerStyle={styles.carouselContent}>
+            {activities.map((activity) => (
+              <ActivityCard
+                key={activity.id}
+                activity={activity}
+                style={styles.card}
+                onPress={() => router.push({ pathname: '/activity/[id]', params: { id: activity.id } })}
+                onToggleCompleted={() => toggleCompleted(activity.id)}
+              />
+            ))}
             <Pressable
               onPress={() => openNew(date)}
-              hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={`Add another session on ${formatLongDate(date)}`}
               style={styles.addMore}>
-              <Ionicons name="add" size={24} color={Colors.textMuted} />
+              <Ionicons name="add" size={20} color={Colors.textMuted} />
             </Pressable>
-          </>
+          </ScrollView>
         )}
       </View>
     );
@@ -158,7 +208,7 @@ export default function CalendarScreen() {
                 </View>
               </Pressable>
               <Pressable onPress={showTips} hitSlop={8} accessibilityLabel="Calendar tips">
-                <Ionicons name="bulb-outline" size={30} color={Colors.text} />
+                <Ionicons name="bulb-outline" size={27} color={Colors.text} />
               </Pressable>
             </>
           }
@@ -171,7 +221,7 @@ export default function CalendarScreen() {
         renderItem={renderRow}
         getItemLayout={(_, index) => ({ length: rowHeight(rows[index]), offset: offsets[index], index })}
         initialScrollIndex={anchorIndex}
-        initialNumToRender={20}
+        initialNumToRender={24}
         windowSize={11}
         onEndReached={() => setWeeksAfter((w) => w + 26)}
         onEndReachedThreshold={2}
@@ -191,20 +241,23 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.separator,
   },
   todayIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 7,
+    width: 29,
+    height: 29,
+    borderRadius: 6,
     borderWidth: 2,
-    borderTopWidth: 6,
+    borderTopWidth: 5,
     borderColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   todayIconText: {
     color: Colors.accent,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     marginTop: -2,
+  },
+  pastWeek: {
+    backgroundColor: Colors.pastWeek,
   },
   weekGap: {
     height: WEEK_GAP,
@@ -215,13 +268,33 @@ const styles = StyleSheet.create({
   weekTitleRow: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    gap: 5,
+    paddingHorizontal: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.separator,
   },
   weekTitle: {
     color: Colors.text,
-    fontSize: 20,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  totals: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  totalsLabel: {
+    color: Colors.textSubtle,
+    fontSize: 13,
+  },
+  totalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  totalValue: {
+    color: Colors.text,
+    fontSize: 13,
     fontWeight: '700',
   },
   dayRow: {
@@ -229,32 +302,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.separator,
-    paddingRight: 12,
   },
   dayLabelCol: {
-    width: 64,
+    width: 58,
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
+  },
+  dayLabelColCompact: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 4,
   },
   dayLabel: {
     color: Colors.textSubtle,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
   },
   dateCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dateCompact: {
+    width: 'auto',
+    height: 'auto',
   },
   todayCircle: {
     backgroundColor: Colors.light,
   },
   dateText: {
     color: Colors.text,
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '500',
+  },
+  dateTextCompact: {
+    fontSize: 12,
   },
   pastDate: {
     color: Colors.textSubtle,
@@ -263,27 +347,46 @@ const styles = StyleSheet.create({
     color: Colors.textOnLight,
     fontWeight: '600',
   },
+  restDay: {
+    flex: 1,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    paddingLeft: 14,
+  },
+  restDayText: {
+    color: Colors.textSubtle,
+    fontSize: 15,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingLeft: 14,
-    paddingVertical: 10,
+    gap: 6,
+    paddingLeft: 12,
+    paddingVertical: 8,
     paddingRight: 24,
   },
   addText: {
     color: Colors.textMuted,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '500',
   },
-  cards: {
+  carousel: {
     flex: 1,
-    maxWidth: 280,
-    marginLeft: 22,
-    gap: CARD_GAP,
+    alignSelf: 'stretch',
+  },
+  carouselContent: {
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 14,
+    paddingRight: 16,
+  },
+  card: {
+    width: ACTIVITY_CARD_WIDTH,
   },
   addMore: {
-    marginLeft: 'auto',
-    padding: 6,
+    width: 30,
+    height: ACTIVITY_CARD_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

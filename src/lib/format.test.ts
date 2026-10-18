@@ -1,4 +1,11 @@
-import { formatActivitySummary, formatDistance, formatDuration, splitDuration } from '@/lib/format';
+import {
+  formatActivitySummary,
+  formatDistance,
+  formatDuration,
+  formatDurationShort,
+  formatPace,
+  splitDuration,
+} from '@/lib/format';
 
 describe('format', () => {
   it('formats durations', () => {
@@ -27,5 +34,18 @@ describe('format', () => {
     // Distance is hidden for sports without a distance unit.
     expect(formatActivitySummary({ distanceKm: 3, durationSec: 1800 })).toBe('30m');
     expect(formatActivitySummary({})).toBe('');
+  });
+
+  it('formats totals without seconds', () => {
+    expect(formatDurationShort(13500)).toBe('3h 45m');
+    expect(formatDurationShort(7200)).toBe('2h');
+    expect(formatDurationShort(2700)).toBe('45m');
+  });
+
+  it('formats pace and speed per sport', () => {
+    expect(formatPace({ distanceKm: 10, durationSec: 3120 }, 'run')).toBe('5:12 /km');
+    expect(formatPace({ distanceKm: 2, durationSec: 2100 }, 'swim')).toBe('1:45 /100m');
+    expect(formatPace({ distanceKm: 42.6, durationSec: 5400 }, 'ride')).toBe('28.4 km/h');
+    expect(formatPace({ durationSec: 1800 }, 'run')).toBeUndefined();
   });
 });

@@ -17,8 +17,12 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
   `activity/new` and `activity/[id]` are modal sheets for adding/editing a session.
 - `src/components/` — UI. `activity-editor` is the add/edit flow; `workout-type-picker` is the
   search + sport chips + tile grid used inside it; `week-strip` is Today's week/month header.
-- `src/data/sports.ts` — the catalogue of sports and workout types (ids like `run.tempo`, icon,
-  gradient). Add new activities here; the UI picks them up automatically.
+- `src/data/sports.ts` — the catalogue: Run, Ride, Swim, Strength, Hyrox and their workout types
+  (ids like `run.tempo`, icon, tile gradient, and a solid `color` used for calendar strips). Add new
+  activities here; the UI picks them up automatically. Activities whose type was removed still show
+  (grey strip, "Activity") and count under "All" in Progress.
+- `src/lib/progress.ts` — totals/weekly series for Progress and calendar week totals (completed only
+  in Progress).
 - `src/store/activities.ts` — Zustand store persisted to AsyncStorage (`hickling.activities`).
   Activity dates are local `YYYY-MM-DD` strings; distance is stored in km.
 - `src/lib/dates.ts` — week maths (weeks start Monday), labels. `src/lib/format.ts` — durations/distances.
@@ -30,8 +34,9 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 - Must keep working in **Expo Go**: only use modules bundled with the SDK
   (`node_modules/expo/bundledNativeModules.json`) until we move to a dev build.
 - Icons: `MaterialCommunityIcons` for sports, `Ionicons` for UI chrome. Names are type-checked.
-- Calendar rows have fixed heights (`ACTIVITY_CARD_HEIGHT`, `dayRowHeight`) so `getItemLayout`
-  can open on today — keep cards to one-line title + summary.
+- Calendar rows have fixed heights (`ACTIVITY_CARD_HEIGHT`, `rowHeight`) so `getItemLayout` can open
+  on today. Several sessions on a day scroll sideways in a carousel — never stack them vertically.
+- Owner prefers compact type: keep sizes on the `Type` scale in `theme.ts` (body 15, titles 18–20).
 - Run `npm run check` (typecheck + lint + jest) before committing.
 
 ## Cloud sessions

@@ -38,7 +38,7 @@ export function TabBar({ state, navigation, insets }: BottomTabBarProps) {
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
             style={styles.tab}>
-            <Ionicons name={tab.icon} size={28} color={color} />
+            <Ionicons name={tab.icon} size={26} color={color} />
             <Text style={[styles.label, { color }]}>{tab.label}</Text>
           </Pressable>
         );
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
 });

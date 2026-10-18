@@ -33,11 +33,11 @@ const styles = StyleSheet.create({
   },
   text: {
     color: Colors.textMuted,
-    fontSize: 16,
+    fontSize: 15,
   },
   link: {
     color: Colors.accent,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

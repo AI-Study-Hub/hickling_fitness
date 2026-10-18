@@ -20,14 +20,12 @@ interface Props {
   activity?: Activity;
   defaultDate: ISODate;
   defaultTypeId?: string;
-  /** Opened from "Record workout": logs a finished session for today. */
-  record?: boolean;
 }
 
 const digits = (text: string) => text.replace(/[^0-9]/g, '');
 const decimal = (text: string) => text.replace(',', '.').replace(/[^0-9.]/g, '');
 
-export function ActivityEditor({ activity, defaultDate, defaultTypeId, record }: Props) {
+export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) {
   const insets = useSafeAreaInsets();
   const today = todayISO();
   const addActivity = useActivities((s) => s.addActivity);
@@ -50,9 +48,9 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId, record }:
     return unit === 'm' ? String(Math.round(activity.distanceKm * 1000)) : String(activity.distanceKm);
   });
   const [notes, setNotes] = useState(activity?.notes ?? '');
-  const [completed, setCompleted] = useState(activity?.completed ?? (!!record || defaultDate < today));
+  const [completed, setCompleted] = useState(activity?.completed ?? defaultDate < today);
 
-  const heading = activity ? 'Edit session' : record ? 'Record workout' : 'Add session';
+  const heading = activity ? 'Edit session' : 'Add session';
 
   const chooseType = (workout: WorkoutType) => {
     const previous = type;
@@ -115,7 +113,7 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId, record }:
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-          <Text style={styles.pickTitle}>{record ? 'What did you do?' : 'What are you doing?'}</Text>
+          <Text style={styles.pickTitle}>What are you doing?</Text>
           <Text style={styles.pickSubtitle}>{formatLongDate(date)}</Text>
           <WorkoutTypePicker onSelect={chooseType} />
         </ScrollView>
@@ -215,7 +213,7 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId, record }:
         </View>
 
         <PillButton
-          label={activity ? 'Save changes' : record ? 'Save workout' : 'Add to calendar'}
+          label={activity ? 'Save changes' : 'Add to calendar'}
           onPress={save}
           style={styles.save}
         />
@@ -283,12 +281,12 @@ const styles = StyleSheet.create({
   },
   topBarButton: {
     color: Colors.textMuted,
-    fontSize: 17,
+    fontSize: 16,
     width: 70,
   },
   topBarTitle: {
     color: Colors.text,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
   },
   topBarSpacer: {
@@ -333,7 +331,7 @@ const styles = StyleSheet.create({
   },
   bannerName: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
@@ -347,7 +345,7 @@ const styles = StyleSheet.create({
   changeText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
   field: {
     backgroundColor: Colors.surface,
@@ -358,12 +356,12 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     ...Type.caps,
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.textSubtle,
   },
   input: {
     color: Colors.text,
-    fontSize: 17,
+    fontSize: 16,
     paddingVertical: 4,
   },
   notes: {
@@ -380,12 +378,12 @@ const styles = StyleSheet.create({
   },
   dateMain: {
     color: Colors.text,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
   },
   dateSub: {
     color: Colors.textSubtle,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
   },
   inline: {
@@ -410,14 +408,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     color: Colors.text,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     textAlign: 'right',
     height: '100%',
   },
   numberSuffix: {
     color: Colors.textSubtle,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
   },
   switchRow: {
@@ -427,7 +425,7 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     color: Colors.text,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
   },
   save: {
@@ -439,7 +437,7 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: Colors.danger,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

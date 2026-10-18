@@ -31,7 +31,7 @@ export function WorkoutTile({ workout, width, onPress }: Props) {
           color="rgba(255,255,255,0.28)"
           style={[styles.watermark, { right: -height * 0.18, bottom: -height * 0.2 }]}
         />
-        <MaterialCommunityIcons name={workout.icon} size={22} color="#fff" />
+        <MaterialCommunityIcons name={workout.icon} size={20} color="#fff" />
         <Text style={styles.label} numberOfLines={2}>
           {workout.name}
         </Text>
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: '#fff',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: -0.2,
     textShadowColor: 'rgba(0,0,0,0.15)',

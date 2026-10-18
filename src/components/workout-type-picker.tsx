@@ -69,12 +69,12 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: Colors.text,
-    fontSize: 16,
+    fontSize: 15,
     height: '100%',
   },
   empty: {
     color: Colors.textSubtle,
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
     paddingHorizontal: 32,
     paddingTop: 24,

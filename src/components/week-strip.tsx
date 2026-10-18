@@ -125,7 +125,7 @@ export function WeekStrip({ today, selected, markedDates, expanded, onSelect, on
   );
 }
 
-const CIRCLE = 38;
+const CIRCLE = 34;
 
 const styles = StyleSheet.create({
   labels: {
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     color: Colors.textSubtle,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     letterSpacing: 0.3,
   },
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     color: Colors.textSubtle,
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '500',
   },
   todayText: {
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   },
   monthTitle: {
     color: Colors.text,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   handleTab: {

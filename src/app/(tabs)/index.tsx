@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActivityCard } from '@/components/activity-card';
 import { HeroBadge } from '@/components/hero-badge';
-import { PillButton } from '@/components/pill-button';
 import { ScreenHeader, Wordmark } from '@/components/screen-header';
 import { SportChips } from '@/components/sport-chips';
 import { WeekStrip } from '@/components/week-strip';
@@ -48,7 +47,7 @@ export default function TodayScreen() {
       <LinearGradient colors={TodayGradient} locations={[0, 0.35, 0.7, 1]} style={StyleSheet.absoluteFill} />
 
       <ScrollView
-        contentContainerStyle={{ paddingTop: headerHeight + 28, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingTop: headerHeight + 28, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <HeroBadge />
@@ -132,13 +131,6 @@ export default function TodayScreen() {
           onToggleExpanded={() => setCalendarExpanded((e) => !e)}
         />
       </View>
-
-      <PillButton
-        label="Record workout"
-        icon="play"
-        style={styles.record}
-        onPress={() => router.push({ pathname: '/activity/new', params: { date: today, record: '1' } })}
-      />
     </View>
   );
 }
@@ -210,16 +202,10 @@ const styles = StyleSheet.create({
   },
   collapseText: {
     ...Type.caps,
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.textSubtle,
   },
   picker: {
     gap: 14,
-  },
-  record: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 14,
   },
 });

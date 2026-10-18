@@ -14,6 +14,8 @@ export const Colors = {
   surfaceBorder: '#3A404C',
   separator: '#3E434C',
   tabBar: '#141414',
+  /** Rows of weeks that have already finished, like Runna's tinted past weeks. */
+  pastWeek: '#1D2129',
 
   // Text
   text: '#ECEEF6',
@@ -25,6 +27,8 @@ export const Colors = {
   light: '#E4EAF1',
   accent: '#2DD4B0',
   brand: '#C8675A',
+  /** Progress chart line — Strava-style orange. */
+  chart: '#FC5A1E',
   danger: '#F2555A',
   marker: '#8E9296',
   handle: '#4A5566',
@@ -52,11 +56,11 @@ export const Radius = {
 } as const;
 
 export const Type = {
-  hero: { fontSize: 30, fontWeight: '700', letterSpacing: -0.4 },
-  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.2 },
-  heading: { fontSize: 20, fontWeight: '700' },
-  body: { fontSize: 16, fontWeight: '400' },
-  bodyBold: { fontSize: 16, fontWeight: '700' },
-  label: { fontSize: 14, fontWeight: '500' },
-  caps: { fontSize: 13, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
+  hero: { fontSize: 28, fontWeight: '700', letterSpacing: -0.4 },
+  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.2 },
+  heading: { fontSize: 18, fontWeight: '700' },
+  body: { fontSize: 15, fontWeight: '400' },
+  bodyBold: { fontSize: 15, fontWeight: '700' },
+  label: { fontSize: 13, fontWeight: '500' },
+  caps: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
 } as const;

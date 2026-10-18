@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   },
   glyph: {
     color: '#1B1416',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
     fontStyle: 'italic',
     letterSpacing: -1,
