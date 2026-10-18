@@ -5,13 +5,13 @@
 
 export type StepKind = 'warmup' | 'work' | 'recovery' | 'cooldown' | 'rest';
 
-/** 1 Recovery · 2 Easy · 3 Threshold · 4 Hard (VO2max) · 5 Max (sprint). */
+/** Norwegian 5-zone scale: 1 Easy · 2 Steady · 3 Sub-threshold · 4 Hard (threshold+/VO2) · 5 Max. */
 export type Zone = 1 | 2 | 3 | 4 | 5;
 
 export const ZONE_NAMES: Record<Zone, string> = {
-  1: 'Recovery',
-  2: 'Easy',
-  3: 'Threshold',
+  1: 'Easy',
+  2: 'Steady',
+  3: 'Sub-threshold',
   4: 'Hard',
   5: 'Max',
 };

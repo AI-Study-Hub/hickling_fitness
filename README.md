@@ -16,7 +16,10 @@ Built with Expo (React Native + TypeScript). Data is stored on the phone for now
   week), year and all-time totals, and recent completed sessions.
 - **Add / edit sheet** — search or pick a sport and workout type, then set title, date, duration,
   distance, notes and completed.
-- Plan and Support tabs are placeholders.
+- **Plan (AI coach)** — chat with a coach that builds and adjusts training using the Norwegian method
+  (OpenAI Agents SDK). It asks questions first, proposes sessions with full workouts (warm-up, reps,
+  recoveries, pace/HR/power/RPE targets) and only changes your calendar when you tap Accept.
+- Support tab is a placeholder.
 
 ## One-time setup on your Mac
 
@@ -35,16 +38,40 @@ Built with Expo (React Native + TypeScript). Data is stored on the phone for now
 ## Running it on your iPhone
 
 ```bash
-npm start
+npm run dev        # the app + the coach server (use `npm start` for the app only)
 ```
 
 In Expo Go, tap **Scan QR code** and scan the code in the terminal. Your Mac and iPhone need to be on
 the same Wi-Fi. Edits reload on the phone automatically; keep the terminal running while you use it.
 
-To get the latest changes from Claude: `git pull`, then `npm install`, then `npm start`.
+To get the latest changes from Claude: `git pull`, then `npm install`, then `npm run dev`.
 
 If Expo Go says the project needs a newer Expo Go, the project's Expo SDK is ahead of the App Store
 version — see the SDK note in `CLAUDE.md`.
+
+## The coach (Plan tab)
+
+The coach runs in a small server on your Mac (`server/`), next to Expo; your phone talks to it over Wi-Fi.
+Your OpenAI key stays on the Mac and never goes into the app.
+
+1. Create an API key at https://platform.openai.com/api-keys (the account needs billing set up).
+2. Run `npm run coach:setup` and paste the key when asked (it's hidden as you type). This writes
+   `.env.local` (git-ignored) with the key, a random token the app uses to talk to the coach, and the model.
+3. Run `npm run dev` (restart it if it was already running) and open the **Plan** tab.
+
+Settings in `.env.local`:
+
+| Setting | Default | |
+|---|---|---|
+| `COACH_MODEL` | `gpt-5.6-terra` | `gpt-5.6-luna` is ~10× cheaper, `gpt-5.6-sol` is stronger |
+| `COACH_REASONING` | `low` | `medium` / `high` for more careful plans (slower, pricier) |
+| `COACH_TRACING` | on | `off` to stop sending traces to platform.openai.com/traces (health details are never included) |
+
+Rough cost on Terra: ~$0.40 for a full plan-building conversation, ~$0.05–0.10 for a tweak.
+
+If the Plan tab says it can't reach the coach: check `npm run dev` is running, the phone is on the same
+Wi-Fi as the Mac, and allow incoming connections for `node` if macOS asks. `npm run coach:demo` runs a
+scripted coach (no OpenAI) for testing the screen.
 
 ### Later: your own build (needed for Apple Health / Apple Watch)
 

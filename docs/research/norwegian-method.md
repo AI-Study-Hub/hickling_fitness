@@ -53,8 +53,7 @@ Swim CSS = (400 m time − 200 m time) ÷ 2 per 100 m. HRmax: use a measured val
 | Z4 Threshold+/VO2 | 4–6 | 87–92 | 98–103 | 10k → 5k pace | 95–105% FTP | CSS → CSS −2 s | 7–8 | X session, race-specific |
 | Z5 Max | >6 | 92–97+ | >103 | 3k → mile pace, hill sprints | >105% FTP | sprint | 9–10 | hills, strides, sprints |
 
-Note: the app's `Zone` type (`src/data/workout.ts`) labels zone 3 "Threshold" — it means this sub-threshold
-band.
+The app's `Zone` type (`src/data/workout.ts`) uses these five names and numbers.
 
 Control rules [I]: short reps (≤3 min / 1 km / 400s) by **pace** (HR lags); long reps (≥6 min) by **HR
 ceiling** — early reps 10–15 bpm under LTHR, later reps approach LTHR from below; heat/wind/hills/altitude →

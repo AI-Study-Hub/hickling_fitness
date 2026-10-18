@@ -28,6 +28,28 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 - `src/lib/dates.ts` — week maths (weeks start Monday), labels. `src/lib/format.ts` — durations/distances.
 - `src/constants/theme.ts` — colour tokens sampled from Runna screenshots. Use tokens, not raw hex.
 - `docs/research/runna-ux.md` — Runna UX research and the list of ideas not built yet.
+- `docs/research/norwegian-method.md` — the coaching research behind the AI coach (with sources).
+
+## AI coach (Plan tab)
+
+- **Server** (`server/`, Node 22 + Hono + `@openai/agents` 0.20, run with tsx): `server/index.ts` serves
+  `POST /coach/turn` on port 8787; `server/coach/agent.ts` has the single `Coach` agent and its tools
+  (`get_activities`, `update_athlete_profile`, `offer_choices` — stops the turn, `propose_plan_changes`);
+  `instructions.ts` holds the coaching rules (keep in sync with the Norwegian research doc) plus the
+  per-turn context built from the phone's snapshot; `validate.ts` rejects bad proposals (past dates,
+  completed/unknown ids, steps without duration/distance) and warns on 80/20 violations.
+- **Contract** (`src/coach/contract.ts`, zod) is shared by app and server — relative imports only, no RN
+  imports. Tool/proposal schemas use `.nullable()` (OpenAI strict mode). The app sends a snapshot (last
+  8 weeks + future activities, profile, today) every turn; the server is stateless. Conversation state is
+  `previousResponseId`, stored on the phone (`src/store/coach.ts`).
+- **Proposals are data**: tools never write to the phone. The app applies a proposal only on Accept
+  (`src/coach/apply.ts`, re-validated against the current calendar; completed sessions and past dates are
+  never touched), then tells the coach. Coach sessions have `source: 'coach'` and a `workout`.
+- Secrets live in `.env.local` (git-ignored): `OPENAI_API_KEY`, `EXPO_PUBLIC_COACH_TOKEN` (LAN token, also
+  compiled into the app), `COACH_MODEL`. Never give the OpenAI key an `EXPO_PUBLIC_` prefix.
+- Tests use `ScriptedModel` from `@openai/agents/testing` (`server/coach/coach.test.ts`, `@jest-environment
+  node`). `npm run coach:demo` serves a scripted coach for UI work without a key — this cloud environment
+  can't reach api.openai.com.
 
 ## Conventions
 

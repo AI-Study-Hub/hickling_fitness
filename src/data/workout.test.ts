@@ -22,7 +22,7 @@ describe('workout', () => {
   });
 
   it('describes a step with its targets', () => {
-    expect(describeStep(plan.blocks[1].steps[0])).toBe('6 min · Threshold · 4:05–4:10 /km · RPE 7');
+    expect(describeStep(plan.blocks[1].steps[0])).toBe('6 min · Sub-threshold · 4:05–4:10 /km · RPE 7');
     expect(describeStep({ kind: 'work', distanceM: 400, durationSec: 90 })).toBe('400 m');
     expect(describeStep({ kind: 'cooldown', distanceM: 2500 })).toBe('2.5 km');
   });
