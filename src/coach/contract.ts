@@ -95,10 +95,18 @@ export const ProposalReviewSchema = z.object({
   notes: z.array(z.string()),
 });
 
+/** Where a week sits in the plan, e.g. "Build 2 of 3", "Deload", "Taper 1 of 2", "Race week". */
+export const WeekLabelSchema = z.object({
+  weekStart: IsoDate.describe('Monday of the week'),
+  label: z.string().max(40),
+});
+export type WeekLabel = z.infer<typeof WeekLabelSchema>;
+
 export const ProposalSchema = z.object({
   id: z.string(),
   summary: z.string(),
   actions: z.array(ActionSchema),
+  weeks: z.array(WeekLabelSchema).nullish(),
   review: ProposalReviewSchema.nullish(),
 });
 export type Proposal = z.infer<typeof ProposalSchema>;

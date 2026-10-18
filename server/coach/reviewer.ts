@@ -12,6 +12,8 @@ export interface ReviewInput {
   actions: PlanAction[];
   /** Findings from the deterministic checks in validate.ts. */
   warnings: string[];
+  /** Sessions from earlier parts of the same proposal, already checked (they're in the snapshot as draft-…). */
+  earlier?: number;
 }
 
 export type ReviewFn = (input: ReviewInput) => Promise<Review>;
@@ -52,10 +54,11 @@ function actionLine(a: PlanAction, snapshot: Snapshot): string {
 }
 
 /** Everything the reviewer needs, as compact text. */
-export function buildReviewInput({ snapshot, summary, actions, warnings }: ReviewInput): string {
+export function buildReviewInput({ snapshot, summary, actions, warnings, earlier = 0 }: ReviewInput): string {
   const { today } = snapshot;
-  const dates = actions.flatMap((a) => ('date' in a ? [a.date] : []));
-  const lastDate = dates.sort().at(-1) ?? today;
+  const dates = actions.flatMap((a) => ('date' in a ? [a.date] : [])).sort();
+  const firstDate = dates[0] ?? today;
+  const lastDate = dates.at(-1) ?? today;
   const thisWeek = startOfWeek(today);
 
   // Calendar as it would be after the proposal, for the load table.
@@ -67,7 +70,8 @@ export function buildReviewInput({ snapshot, summary, actions, warnings }: Revie
   const before = weeklyLoads(snapshot.activities, addDays(thisWeek, -42), addDays(thisWeek, -7), today);
   const ahead = weeklyLoads(after, thisWeek, startOfWeek(lastDate), today);
   const window = snapshot.activities
-    .filter((a) => a.date >= today && a.date <= addDays(lastDate, 7) && !deleted.has(a.id))
+    .filter((a) => a.date >= addDays(firstDate, -14) && a.date >= today && a.date <= addDays(lastDate, 7) && !deleted.has(a.id))
+    .sort((a, b) => a.date.localeCompare(b.date))
     .map(activityLine);
 
   const profile = Object.entries(snapshot.profile)
@@ -89,7 +93,11 @@ ${ahead.map(describeWeekLoad).join('\n')}
 ## Already in the calendar around the proposal (kept unless deleted below)
 ${window.join('\n') || '(nothing)'}
 
-## Proposal: ${summary}
+## Proposal: ${summary}${
+    earlier
+      ? `\nThis is a later part of a longer plan: ${earlier} sessions from the earlier parts (ids draft-…) are already in the calendar above and were checked. Review only the sessions below, in that context.`
+      : ''
+  }
 ${actions.map((a) => actionLine(a, snapshot)).join('\n')}
 
 ## Automatic checks flagged

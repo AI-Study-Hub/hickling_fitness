@@ -10,19 +10,26 @@ export interface Validation {
   warnings: string[];
 }
 
-const MAX_ACTIONS = 40;
-const MAX_DAYS_AHEAD = 7 * 8;
+/** Per propose_plan_changes call — bigger changes go through build_plan. */
+const MAX_ACTIONS = 60;
+const MAX_WEEKS_AHEAD = 52;
 
 type Session = { date: string; workoutTypeId: string; durationSec?: number | null; workout?: { intensity: 'easy' | 'moderate' | 'hard' } | null };
 
-export function validateActions(actions: PlanAction[], snapshot: Snapshot): Validation {
+export function validateActions(
+  actions: PlanAction[],
+  snapshot: Snapshot,
+  { maxActions = MAX_ACTIONS }: { maxActions?: number } = {},
+): Validation {
   const errors: string[] = [];
   const warnings: string[] = [];
   const { today } = snapshot;
   const byId = new Map(snapshot.activities.map((a) => [a.id, a]));
 
   if (actions.length === 0) errors.push('No actions — propose at least one change.');
-  if (actions.length > MAX_ACTIONS) errors.push(`Too many changes (${actions.length}); propose at most 2 weeks at a time.`);
+  if (actions.length > maxActions) {
+    errors.push(`Too many changes in one call (${actions.length}, max ${maxActions}); use build_plan for whole plans.`);
+  }
 
   actions.forEach((action, i) => {
     const where = `action ${i + 1} (${action.op}${'date' in action ? ` ${action.date}` : ''})`;
@@ -33,7 +40,7 @@ export function validateActions(actions: PlanAction[], snapshot: Snapshot): Vali
     }
     if (action.op === 'delete') return;
     if (action.date < today) errors.push(`${where}: ${action.date} is in the past (today is ${today}).`);
-    if (action.date > addDays(today, MAX_DAYS_AHEAD)) errors.push(`${where}: more than 8 weeks ahead.`);
+    if (action.date > addDays(today, MAX_WEEKS_AHEAD * 7)) errors.push(`${where}: more than ${MAX_WEEKS_AHEAD} weeks ahead.`);
     action.workout.blocks.forEach((block, b) =>
       block.steps.forEach((step, s) => {
         if (!step.durationSec && !step.distanceM) {
@@ -134,7 +141,7 @@ export function progressionWarnings(actions: PlanAction[], snapshot: Snapshot): 
     });
     if (jumps.length) {
       warnings.push(
-        `Week of ${week} vs the biggest of the 3 weeks before: ${jumps.join(', ')}. Normal steps are +5–10% (load +10%); over +20% (load +25%) is too much unless it's a return to normal after a deload.`,
+        `Week of ${week} vs the biggest of the 3 weeks before: ${jumps.join(', ')}. Normal steps are +5–10% (load +10%); over +20% (load +25%) is a lot — unless it's a return to normal after a deload, or they train more than the app has logged (check the profile).`,
       );
     }
   }
@@ -169,7 +176,7 @@ export function progressionWarnings(actions: PlanAction[], snapshot: Snapshot): 
       const floor = sport === 'run' ? longest + (unit === 'min' ? RUN_FLOOR.minutes : RUN_FLOOR.km) : 0;
       const cap = Math.max(longest * limit, floor);
       return longest > 0 && planned > cap
-        ? `${a.workoutTypeId} on ${a.date} is ${Math.round(planned * 10) / 10} ${unit} — ${pct(planned / longest)} on the longest ${sport} in the 30 days before it (${Math.round(longest * 10) / 10} ${unit}); keep it ≤ ${Math.floor(cap * 10) / 10} ${unit}.`
+        ? `${a.workoutTypeId} on ${a.date} is ${Math.round(planned * 10) / 10} ${unit} — ${pct(planned / longest)} on the longest logged ${sport} in the 30 days before it (${Math.round(longest * 10) / 10} ${unit}); ≤ ${Math.floor(cap * 10) / 10} ${unit} is the safe step unless they've done longer recently.`
         : null;
     };
     const longestKm = Math.max(0, ...before.map((x) => x.distanceKm ?? 0));

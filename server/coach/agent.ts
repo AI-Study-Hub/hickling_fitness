@@ -1,50 +1,21 @@
 import { Agent, Runner, tool, type Model, type RunContext } from '@openai/agents';
 import { z } from 'zod';
 
-import {
-  ActionSchema,
-  AthleteProfileSchema,
-  IsoDate,
-  type AthleteProfilePatch,
-  type Choices,
-  type Proposal,
-  type Snapshot,
-} from '../../src/coach/contract';
+import { ActionSchema, AthleteProfileSchema, IsoDate, type AthleteProfilePatch } from '../../src/coach/contract';
+import { buildPlan } from './build-plan';
+import { addToProposal, ctx, reviewChanges, withDraft, type CoachContext } from './context';
 import { activityLine, buildInstructions } from './instructions';
-import type { ReviewFn } from './reviewer';
 import { validateActions } from './validate';
 
-/** How many times per turn the reviewer can send a proposal back before it's shown with its concerns. */
-export const MAX_REVIEW_ROUNDS = 2;
+export { createContext, MAX_REVIEW_ROUNDS, type CoachContext } from './context';
 
-/** Per-request state. Lives only on the server for the length of one turn; never sent to the model. */
-export interface CoachContext {
-  snapshot: Snapshot;
-  proposals: Proposal[];
-  profile: AthleteProfilePatch;
-  choices: Choices | null;
-  /** Reviewer agent; null skips the review (e.g. in tests that don't exercise it). */
-  review: ReviewFn | null;
-  reviewRounds: number;
-  /** Lets tools show a progress label in the app while they work. */
-  onProgress?: (label: string) => void;
-}
-
-export function createContext(snapshot: Snapshot, review: ReviewFn | null = null): CoachContext {
-  return { snapshot, proposals: [], profile: {}, choices: null, review, reviewRounds: 0 };
-}
-
-const issueLine = (i: { session: string | null; problem: string; fix: string }) =>
-  `${i.session ? `${i.session}: ` : ''}${i.problem} → ${i.fix}`;
-
-const ctx = (rc?: RunContext<CoachContext>): CoachContext => {
-  if (!rc) throw new Error('Coach tools need a run context');
-  return rc.context;
-};
+/** Small edits skip the reviewer (it adds ~20 s); anything bigger gets a second opinion. */
+const REVIEW_FROM_SESSIONS = 3;
 
 const getActivities = tool({
   name: 'get_activities',
-  description: 'List calendar activities between two dates (inclusive). The next 3 weeks and the last 2 are already in your context.',
+  description:
+    'List calendar activities between two dates (inclusive). Everything from 2 weeks ago to the last planned session is already in your context.',
   parameters: z.object({ from: IsoDate, to: IsoDate }),
   execute: async ({ from, to }, rc?: RunContext<CoachContext>) => {
     const lines = ctx(rc)
@@ -87,46 +58,32 @@ const offerChoices = tool({
 const proposePlanChanges = tool({
   name: 'propose_plan_changes',
   description:
-    'Show the athlete a card of calendar changes (create / update / delete sessions) with full workouts. Nothing is saved until they tap Accept.',
+    'For a few changes: add, move, swap, shorten or remove sessions, with full workouts you write yourself. ' +
+    'Shown as a card with Accept / Decline; nothing is saved until they accept. To build a plan or a block, use build_plan.',
   parameters: z.object({
-    summary: z.string().describe('One line, e.g. "Week 1: 3 sub-threshold sessions, long run 75 min"'),
+    summary: z.string().describe('One line, e.g. "Swap Thursday\'s intervals for an easy ride"'),
     actions: z.array(ActionSchema),
   }),
   execute: async ({ summary, actions }, rc?: RunContext<CoachContext>) => {
     const c = ctx(rc);
-    const { errors, warnings } = validateActions(actions, c.snapshot);
+    const draft = c.proposals[0];
+    const snapshot = withDraft(c.snapshot, draft);
+    const { errors, warnings } = validateActions(actions, snapshot);
     if (errors.length) return `NOT shown — fix these and call propose_plan_changes again:\n- ${errors.join('\n- ')}`;
 
-    // Second opinion from the reviewer agent, against the research rules.
-    let review: Proposal['review'] = null;
-    if (c.review) {
-      c.onProgress?.('Reviewing against the training rules');
-      try {
-        const result = await c.review({ snapshot: c.snapshot, summary, actions, warnings });
-        const blockers = result.issues.filter((i) => i.severity === 'blocker');
-        if (blockers.length && c.reviewRounds < MAX_REVIEW_ROUNDS) {
-          c.reviewRounds++;
-          return `NOT shown — the reviewer found problems. Fix them and call propose_plan_changes again:\n- ${blockers
-            .map(issueLine)
-            .join('\n- ')}`;
-        }
-        review = {
-          verdict: blockers.length ? 'revise' : 'approve',
-          summary: result.summary,
-          notes: result.issues.map(issueLine),
-        };
-      } catch (error) {
-        console.warn('[coach] review failed:', error instanceof Error ? error.message : error);
-      }
-    }
+    const sessions = actions.filter((a) => a.op !== 'delete').length;
+    const { blocked, review } =
+      sessions >= REVIEW_FROM_SESSIONS
+        ? await reviewChanges(c, { snapshot, summary, actions, warnings, earlier: draft?.actions.length ?? 0 })
+        : { blocked: null, review: null };
+    if (blocked) return `NOT shown — the reviewer wants changes. Fix them and call propose_plan_changes again:\n- ${blocked}`;
 
-    const id = `p_${Date.now().toString(36)}${c.proposals.length}`;
-    c.proposals.push({ id, summary, actions, review });
-    const notes = warnings.length ? `\nCheck these (adjust with a new proposal if they weren't intended):\n- ${warnings.join('\n- ')}` : '';
+    const card = addToProposal(c, { summary, actions, review });
+    const notes = warnings.length ? `\nChecks (advice, not rules):\n- ${warnings.join('\n- ')}` : '';
     const reviewNote = review?.notes.length
       ? `\nThe reviewer ${review.verdict === 'revise' ? 'still has concerns' : 'approved, noting'}:\n- ${review.notes.join('\n- ')}`
       : '';
-    return `Proposal ${id} is on the athlete's screen with Accept / Decline buttons. Briefly explain the key sessions; don't list them all.${notes}${reviewNote}`;
+    return `Card ${card.id} is on the athlete's screen with Accept / Decline. Briefly explain the change.${notes}${reviewNote}`;
   },
 });
 
@@ -134,7 +91,7 @@ export function createCoachAgent(): Agent<CoachContext> {
   return new Agent<CoachContext>({
     name: 'Coach',
     instructions: (rc) => buildInstructions(rc.context.snapshot),
-    tools: [getActivities, updateAthleteProfile, offerChoices, proposePlanChanges],
+    tools: [getActivities, updateAthleteProfile, offerChoices, buildPlan, proposePlanChanges],
     // Stop as soon as choices are shown so the athlete can answer. OpenAI hasn't seen that tool's output
     // yet, so the handler returns it as `pendingToolOutputs` and the next turn sends it first.
     toolUseBehavior: { stopAtToolNames: ['offer_choices'] },
@@ -144,21 +101,28 @@ export function createCoachAgent(): Agent<CoachContext> {
 export const DEFAULT_MODEL = 'gpt-5.6-terra';
 
 type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
+type Role = 'coach' | 'writer' | 'reviewer';
+
+const ROLE_ENV: Record<Role, { model: string; reasoning: string; effort: Effort; workflow: string }> = {
+  coach: { model: 'COACH_MODEL', reasoning: 'COACH_REASONING', effort: 'low', workflow: 'Hickling coach' },
+  writer: { model: 'COACH_WRITER_MODEL', reasoning: 'COACH_WRITER_REASONING', effort: 'low', workflow: 'Hickling coach · writer' },
+  reviewer: { model: 'COACH_REVIEW_MODEL', reasoning: 'COACH_REVIEW_REASONING', effort: 'medium', workflow: 'Hickling coach · review' },
+};
 
 /**
- * `model` lets tests pass a scripted model; otherwise COACH_MODEL or the default is used. The reviewer gets
- * its own runner (COACH_REVIEW_MODEL / COACH_REVIEW_REASONING, more reasoning by default).
+ * `model` lets tests pass a scripted model. Otherwise each role reads its own settings (COACH_WRITER_MODEL,
+ * COACH_REVIEW_REASONING, …), falling back to COACH_MODEL and the default.
  */
-export function createRunner(model?: Model, role: 'coach' | 'reviewer' = 'coach'): Runner {
+export function createRunner(model?: Model, role: Role = 'coach'): Runner {
   const env = process.env;
-  const effort = (role === 'reviewer' ? (env.COACH_REVIEW_REASONING ?? 'medium') : (env.COACH_REASONING ?? 'low')) as Effort;
-  const named = role === 'reviewer' ? (env.COACH_REVIEW_MODEL ?? env.COACH_MODEL) : env.COACH_MODEL;
+  const r = ROLE_ENV[role];
+  const effort = (env[r.reasoning] ?? r.effort) as Effort;
   return new Runner({
-    model: model ?? named ?? DEFAULT_MODEL,
+    model: model ?? env[r.model] ?? env.COACH_MODEL ?? DEFAULT_MODEL,
     modelSettings: model ? {} : { reasoning: { effort }, text: { verbosity: 'low' } },
-    workflowName: role === 'reviewer' ? 'Hickling coach · review' : 'Hickling coach',
+    workflowName: r.workflow,
     // Traces are useful while developing (platform.openai.com/traces) but leave health details out of them.
     traceIncludeSensitiveData: false,
-    tracingDisabled: process.env.COACH_TRACING === 'off',
+    tracingDisabled: env.COACH_TRACING === 'off',
   });
 }

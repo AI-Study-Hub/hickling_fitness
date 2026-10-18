@@ -12,6 +12,7 @@ import { networkInterfaces } from 'node:os';
 import { createCoachAgent, createRunner, DEFAULT_MODEL } from './coach/agent';
 import { createCoachHandler } from './coach/handler';
 import { createReviewFn } from './coach/reviewer';
+import { createWriteFn } from './coach/writer';
 
 try {
   process.loadEnvFile('.env.local');
@@ -28,6 +29,8 @@ const handler = createCoachHandler({
   runner: createRunner(),
   // Every proposal is checked by a second agent against the research rules (COACH_REVIEW=off to skip).
   review: process.env.COACH_REVIEW === 'off' ? undefined : createReviewFn(createRunner(undefined, 'reviewer')),
+  // build_plan hands each 2-week chunk of the coach's programme to a session-writer agent, in parallel.
+  write: createWriteFn(createRunner(undefined, 'writer')),
   token,
 });
 

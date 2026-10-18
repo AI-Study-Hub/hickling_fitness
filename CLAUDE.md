@@ -34,17 +34,28 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 ## AI coach (Plan tab)
 
 - **Server** (`server/`, Node 22 + Hono + `@openai/agents` 0.20, run with tsx): `server/index.ts` serves
-  `POST /coach/turn` on port 8787; `server/coach/agent.ts` has the `Coach` agent and its tools
-  (`get_activities`, `update_athlete_profile`, `offer_choices` — stops the turn, `propose_plan_changes`);
+  `POST /coach/turn` on port 8787. It's a team of agents:
+  - `Coach` (`server/coach/agent.ts`) talks to the athlete and is the programmer. Tools: `get_activities`,
+    `update_athlete_profile`, `offer_choices` (stops the turn), `build_plan`, `propose_plan_changes` (small edits
+    with workouts it writes itself).
+  - `build_plan` (`build-plan.ts`) takes the coach's programme (weeks with label/focus, sessions with
+    day/type/intensity/duration/brief, `approach` notes, `replaceIds`), hands each 2-week chunk to a **session
+    writer** agent (`writer.ts`, structured output) in parallel, then reviews the whole plan once. Written chunks
+    are cached per turn, so a rebuild after the reviewer only rewrites the weeks that changed.
+  - Everything proposed in one turn lands on **one card** (`addToProposal` in `context.ts`); later changes are
+    validated against the earlier ones (`withDraft`). Proposals carry week labels; the card groups by week.
+  - Per-turn state, review and card helpers live in `context.ts`;
   `instructions.ts` holds the coaching rules (keep in sync with both research docs) plus the per-turn
   context built from the phone's snapshot (incl. weekly load from `src/coach/load.ts`); `validate.ts` rejects
   bad proposals (past dates, completed/unknown ids, steps without duration/distance) and warns on 80/20 and
   progression problems (weekly jumps, single-session spikes vs the 30-day longest, deload overdue).
-- **Reviewer** (`server/coach/reviewer.ts`, rules in `review-rules.ts`): a second agent with a structured
-  `ReviewSchema` output checks every proposal that passes validation, inside `propose_plan_changes`. Blockers
-  send it back to the coach ("NOT shown"), at most `MAX_REVIEW_ROUNDS` (2) times; after that it's shown with
-  the reviewer's concerns. The verdict/summary/notes travel on the proposal (`review`) and show on the card.
-  A reviewer failure never blocks a proposal. `COACH_REVIEW=off` skips it.
+- **Reviewer** (`server/coach/reviewer.ts`, rules in `review-rules.ts`): an agent with a structured
+  `ReviewSchema` output checks every plan from `build_plan` (and `propose_plan_changes` with 3+ sessions). It
+  approves by default and only blocks clear, material problems; blockers send it back to the coach, at most
+  `MAX_REVIEW_ROUNDS` (2) times, then it's shown with the reviewer's concerns. A reviewer failure never blocks a
+  plan. `COACH_REVIEW=off` skips it.
+- Keep the prompts permissive: limits are sanity checks (60 actions per `propose_plan_changes`, 200 per card,
+  a year ahead), checks are advice, and the coach must act in the same reply rather than promise to.
 - **Contract** (`src/coach/contract.ts`, zod) is shared by app and server — relative imports only, no RN
   imports. Tool/proposal schemas use `.nullable()` (OpenAI strict mode). The app sends a snapshot (last
   8 weeks + future activities, profile, today) every turn; the server is stateless. Conversation state is
@@ -57,8 +68,8 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
   (`src/coach/apply.ts`, re-validated against the current calendar; completed sessions and past dates are
   never touched), then tells the coach. Coach sessions have `source: 'coach'` and a `workout`.
 - Secrets live in `.env.local` (git-ignored): `OPENAI_API_KEY`, `EXPO_PUBLIC_COACH_TOKEN` (LAN token, also
-  compiled into the app), `COACH_MODEL`, optional `COACH_REVIEW_MODEL` / `COACH_REVIEW_REASONING`
-  (default `medium`). Never give the OpenAI key an `EXPO_PUBLIC_` prefix.
+  compiled into the app), `COACH_MODEL`, optional `COACH_WRITER_MODEL` / `COACH_WRITER_REASONING` (default
+  `low`) and `COACH_REVIEW_MODEL` / `COACH_REVIEW_REASONING` (default `medium`). Never give the OpenAI key an `EXPO_PUBLIC_` prefix.
 - Tests use `ScriptedModel` from `@openai/agents/testing` (`server/coach/coach.test.ts`, `@jest-environment
   node`). `npm run coach:demo` serves a scripted coach for UI work without a key — this cloud environment
   can't reach api.openai.com.

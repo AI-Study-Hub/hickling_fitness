@@ -8,12 +8,26 @@ import {
 } from '../../src/coach/contract';
 import { createContext, type CoachContext } from './agent';
 import type { ReviewFn } from './reviewer';
+import type { WriteFn } from './writer';
 
 const WORKING_LABELS: Record<string, string> = {
   get_activities: 'Checking your calendar',
   update_athlete_profile: 'Noting that down',
-  propose_plan_changes: 'Building your sessions',
+  build_plan: 'Handing sessions to the writers',
+  propose_plan_changes: 'Checking the changes',
 };
+
+/** Shown while the model is still writing a tool call's arguments (a long programme takes a while). */
+const WRITING_LABELS: Record<string, string> = {
+  build_plan: 'Programming your plan',
+  propose_plan_changes: 'Writing the changes',
+};
+
+/** Name of a tool call the model has just started writing, from a raw Responses API stream event. */
+export function toolCallStarted(event: unknown): string | null {
+  const e = event as { type?: string; item?: { type?: string; name?: string } } | null;
+  return e?.type === 'response.output_item.added' && e.item?.type === 'function_call' ? (e.item.name ?? null) : null;
+}
 
 /** Turns an app event into the user input for this turn. */
 export function eventToInput(event: TurnEvent): string {
@@ -78,11 +92,13 @@ interface Options {
   token?: string;
   /** Reviewer agent run on every proposal; omit to skip reviews. */
   review?: ReviewFn;
+  /** Session writers for build_plan. */
+  write?: WriteFn;
   maxTurns?: number;
 }
 
 /** `POST /coach/turn` — streams NDJSON `StreamLine`s. Framework-agnostic: (Request) => Response. */
-export function createCoachHandler({ agent, runner, token, review, maxTurns = 16 }: Options) {
+export function createCoachHandler({ agent, runner, token, review, write, maxTurns = 30 }: Options) {
   return async function coachTurn(req: Request): Promise<Response> {
     if (token && req.headers.get('authorization') !== `Bearer ${token}`) {
       return Response.json({ error: 'Unauthorised — check EXPO_PUBLIC_COACH_TOKEN' }, { status: 401 });
@@ -97,7 +113,7 @@ export function createCoachHandler({ agent, runner, token, review, maxTurns = 16
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (line: StreamLine) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
-        const context = createContext(snapshot, review ?? null);
+        const context = createContext(snapshot, { review, write, signal: req.signal });
         context.onProgress = (label) => send({ type: 'working', label });
         let text = '';
         let pendingBreak = false;
@@ -120,6 +136,10 @@ export function createCoachHandler({ agent, runner, token, review, maxTurns = 16
               }
               text += delta;
               send({ type: 'delta', text: delta });
+            } else if (ev.type === 'raw_model_stream_event' && ev.data.type === 'model') {
+              const name = toolCallStarted(ev.data.event);
+              const label = name ? WRITING_LABELS[name] : undefined;
+              if (label) send({ type: 'working', label });
             } else if (ev.type === 'run_item_stream_event' && ev.name === 'tool_called') {
               pendingBreak = true;
               const raw = ev.item.rawItem as { name?: string };

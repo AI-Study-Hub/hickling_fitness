@@ -8,7 +8,7 @@ import type { PlanAction } from '@/coach/contract';
 import { WorkoutDetails } from '@/components/workout-details';
 import { Colors, Radius } from '@/constants/theme';
 import { getWorkoutType } from '@/data/sports';
-import { dayOfMonth, WEEKDAYS_SHORT, weekdayIndex } from '@/lib/dates';
+import { dayOfMonth, formatWeekRange, startOfWeek, WEEKDAYS_SHORT, weekdayIndex } from '@/lib/dates';
 import { formatDistance, formatDurationShort } from '@/lib/format';
 import type { Activity } from '@/store/activities';
 import type { ProposalView } from '@/store/coach';
@@ -108,27 +108,90 @@ function ReviewLine({ review }: { review: NonNullable<ProposalView['review']> })
   );
 }
 
-/** The coach's proposed calendar changes, with Accept / Decline. Tap a row to see the full workout. */
+interface Row {
+  action: PlanAction;
+  date: string;
+  existing?: Activity;
+}
+
+/** One week of a multi-week plan: a tappable header with the week's label and totals, rows when open. */
+function WeekSection({ number, weekStart, label, rows, initiallyOpen }: {
+  number: number;
+  weekStart: string;
+  label?: string;
+  rows: Row[];
+  initiallyOpen: boolean;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const sessions = rows.filter((r) => r.action.op !== 'delete');
+  const seconds = sessions.reduce((t, r) => t + (r.action.op === 'delete' ? 0 : (r.action.durationSec ?? 0)), 0);
+  const meta = [
+    formatWeekRange(weekStart),
+    `${sessions.length} session${sessions.length === 1 ? '' : 's'}`,
+    seconds ? formatDurationShort(seconds) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <View>
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        style={styles.weekHead}>
+        <View style={styles.rowBody}>
+          <Text style={styles.weekTitle}>
+            Week {number}
+            {label ? <Text style={styles.weekLabel}> · {label}</Text> : null}
+          </Text>
+          <Text style={styles.rowMeta}>{meta}</Text>
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textSubtle} />
+      </Pressable>
+      {open && rows.map((r, i) => <ActionRow key={i} action={r.action} existing={r.existing} />)}
+    </View>
+  );
+}
+
+/**
+ * The coach's proposed calendar changes, with Accept / Decline. A plan spanning several weeks is grouped by
+ * week (tap a week to open it); tap a row to see the full workout.
+ */
 export function ProposalCard({ proposal, activities, disabled, onAccept, onDecline }: Props) {
-  const actions = [...proposal.actions].sort((a, b) => {
-    const da = a.op === 'delete' ? (activities[a.id]?.date ?? '') : a.date;
-    const db = b.op === 'delete' ? (activities[b.id]?.date ?? '') : b.date;
-    return da.localeCompare(db);
-  });
+  const rows: Row[] = proposal.actions
+    .map((action) => {
+      const existing = action.op === 'create' ? undefined : activities[action.id];
+      return { action, existing, date: action.op === 'delete' ? (existing?.date ?? '') : action.date };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const weeks = [...new Set(rows.map((r) => (r.date ? startOfWeek(r.date) : '')))];
+  const labels = new Map((proposal.weeks ?? []).map((w) => [w.weekStart, w.label]));
+  const count = proposal.actions.length;
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
-        <Text style={styles.kicker}>Plan update · {proposal.actions.length} change{proposal.actions.length === 1 ? '' : 's'}</Text>
+        <Text style={styles.kicker}>
+          Plan update{weeks.length > 1 ? ` · ${weeks.length} weeks` : ''} · {count} change{count === 1 ? '' : 's'}
+        </Text>
       </View>
       <Text style={styles.summary}>{proposal.summary}</Text>
       {proposal.review && <ReviewLine review={proposal.review} />}
 
       <View style={styles.rows}>
-        {actions.map((action, i) => (
-          <ActionRow key={i} action={action} existing={action.op === 'create' ? undefined : activities[action.id]} />
-        ))}
+        {weeks.length > 1
+          ? weeks.map((week, i) => (
+              <WeekSection
+                key={week}
+                number={i + 1}
+                weekStart={week}
+                label={labels.get(week)}
+                rows={rows.filter((r) => (r.date ? startOfWeek(r.date) : '') === week)}
+                initiallyOpen={i === 0}
+              />
+            ))
+          : rows.map((r, i) => <ActionRow key={i} action={r.action} existing={r.existing} />)}
       </View>
 
       {proposal.status === 'pending' ? (
@@ -145,7 +208,7 @@ export function ProposalCard({ proposal, activities, disabled, onAccept, onDecli
             disabled={disabled}
             accessibilityRole="button"
             style={({ pressed }) => [styles.button, styles.accept, (pressed || disabled) && styles.dim]}>
-            <Text style={styles.acceptText}>Accept</Text>
+            <Text style={styles.acceptText}>{count > 1 ? 'Accept all' : 'Accept'}</Text>
           </Pressable>
         </View>
       ) : (
@@ -234,6 +297,23 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.separator,
+  },
+  weekHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.separator,
+  },
+  weekTitle: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  weekLabel: {
+    color: Colors.accent,
+    fontWeight: '600',
   },
   dateCol: {
     width: 32,
