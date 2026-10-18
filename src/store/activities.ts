@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { SPORTS } from '@/data/sports';
+import type { WorkoutPlan } from '@/data/workout';
 import type { ISODate } from '@/lib/dates';
 
 export interface Activity {
@@ -16,6 +17,10 @@ export interface Activity {
   notes?: string;
   completed: boolean;
   createdAt: number;
+  /** Structured prescription — set when the coach builds the session. */
+  workout?: WorkoutPlan;
+  /** Who created it; coach sessions can be replaced when the plan is rebuilt. */
+  source?: 'manual' | 'coach';
 }
 
 export type NewActivity = Omit<Activity, 'id' | 'createdAt'>;

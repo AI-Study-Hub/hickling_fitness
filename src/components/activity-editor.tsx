@@ -7,6 +7,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PillButton } from '@/components/pill-button';
+import { WorkoutDetails } from '@/components/workout-details';
 import { WorkoutTypePicker } from '@/components/workout-type-picker';
 import { Colors, Radius, Type } from '@/constants/theme';
 import { getWorkoutType, type WorkoutType } from '@/data/sports';
@@ -143,6 +144,12 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
             </Pressable>
           )}
         </LinearGradient>
+
+        {activity?.workout && (
+          <Field label="Workout">
+            <WorkoutDetails plan={activity.workout} color={type.color} />
+          </Field>
+        )}
 
         <Field label="Title">
           <TextInput
