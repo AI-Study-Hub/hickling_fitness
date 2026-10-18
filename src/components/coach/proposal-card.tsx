@@ -50,7 +50,7 @@ function ActionRow({ action, existing }: { action: PlanAction; existing?: Activi
           <Text style={styles.dateNum}>{date ? dayOfMonth(date) : ''}</Text>
         </View>
         <View style={[styles.iconBadge, { backgroundColor: type?.color ?? Colors.marker }]}>
-          <MaterialCommunityIcons name={type?.icon ?? 'help-circle-outline'} size={15} color="#fff" />
+          {type && <MaterialCommunityIcons name={type.icon} size={15} color="#fff" />}
         </View>
         <View style={styles.rowBody}>
           <Text style={[styles.rowTitle, action.op === 'delete' && styles.struck]} numberOfLines={1}>

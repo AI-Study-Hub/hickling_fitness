@@ -78,7 +78,9 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 
 - Must keep working in **Expo Go**: only use modules bundled with the SDK
   (`node_modules/expo/bundledNativeModules.json`) until we move to a dev build.
-- Icons: `MaterialCommunityIcons` for sports, `Ionicons` for UI chrome. Names are type-checked.
+- Icons: exactly **one icon per sport** (5 in total, `MaterialCommunityIcons`). Workout types inherit their
+  sport's icon in `sports.ts` and differ by colour and name only — never add per-type, per-step or decorative
+  sport-style icons. `Ionicons` for UI chrome. Names are type-checked.
 - Calendar rows have fixed heights (`ACTIVITY_CARD_HEIGHT`, `rowHeight`) so `getItemLayout` can open
   on today. Several sessions on a day scroll sideways in a carousel — never stack them vertically.
 - Owner prefers compact type: keep sizes on the `Type` scale in `theme.ts` (body 15, titles 18–20).

@@ -17,6 +17,7 @@ interface Swatch {
 export interface WorkoutType extends Swatch {
   id: string;
   name: string;
+  /** Always the sport's icon — the app uses exactly one icon per sport. */
   icon: IconName;
 }
 
@@ -57,15 +58,15 @@ const S = {
   mint: { gradient: ['#1E7A63', '#7FE0B8'], color: '#3DB68E' },
 } as const satisfies Record<string, Swatch>;
 
-const workout = (id: string, name: string, icon: IconName, swatch: Swatch): WorkoutType => ({
-  id,
-  name,
-  icon,
-  ...swatch,
-});
+const workout = (id: string, name: string, swatch: Swatch) => ({ id, name, ...swatch });
+
+/** Gives every workout type its sport's icon; types differ by colour and name only. */
+function sport({ workouts, ...rest }: Omit<Sport, 'workouts'> & { workouts: Omit<WorkoutType, 'icon'>[] }): Sport {
+  return { ...rest, workouts: workouts.map((w) => ({ ...w, icon: rest.icon })) };
+}
 
 export const SPORTS: Sport[] = [
-  {
+  sport({
     id: 'run',
     name: 'Run',
     addLabel: 'Add run',
@@ -73,18 +74,18 @@ export const SPORTS: Sport[] = [
     color: S.lime.color,
     distanceUnit: 'km',
     workouts: [
-      workout('run.easy', 'Easy Run', 'run', S.lime),
-      workout('run.tempo', 'Tempo', 'run-fast', S.amber),
-      workout('run.intervals', 'Intervals', 'timer-outline', S.ember),
-      workout('run.hills', 'Hills', 'slope-uphill', S.moss),
-      workout('run.long', 'Long Run', 'map-marker-distance', S.violet),
-      workout('run.race', 'Race', 'flag-checkered', S.crimson),
-      workout('run.parkrun', 'parkrun', 'tree', S.lagoon),
-      workout('run.recovery', 'Recovery', 'heart-pulse', S.mint),
-      workout('run.trail', 'Trail Run', 'image-filter-hdr', S.forest),
+      workout('run.easy', 'Easy Run', S.lime),
+      workout('run.tempo', 'Tempo', S.amber),
+      workout('run.intervals', 'Intervals', S.ember),
+      workout('run.hills', 'Hills', S.moss),
+      workout('run.long', 'Long Run', S.violet),
+      workout('run.race', 'Race', S.crimson),
+      workout('run.parkrun', 'parkrun', S.lagoon),
+      workout('run.recovery', 'Recovery', S.mint),
+      workout('run.trail', 'Trail Run', S.forest),
     ],
-  },
-  {
+  }),
+  sport({
     id: 'ride',
     name: 'Ride',
     addLabel: 'Add ride',
@@ -92,17 +93,17 @@ export const SPORTS: Sport[] = [
     color: S.ocean.color,
     distanceUnit: 'km',
     workouts: [
-      workout('ride.endurance', 'Endurance', 'bike', S.ocean),
-      workout('ride.intervals', 'Intervals', 'bike-fast', S.ember),
-      workout('ride.climbs', 'Hill Climbs', 'slope-uphill', S.moss),
-      workout('ride.recovery', 'Recovery Spin', 'bike-pedal', S.mint),
-      workout('ride.indoor', 'Indoor Trainer', 'speedometer', S.indigo),
-      workout('ride.group', 'Group Ride', 'account-group', S.amber),
-      workout('ride.gravel', 'Gravel / MTB', 'terrain', S.sand),
-      workout('ride.race', 'Race', 'flag-checkered', S.crimson),
+      workout('ride.endurance', 'Endurance', S.ocean),
+      workout('ride.intervals', 'Intervals', S.ember),
+      workout('ride.climbs', 'Hill Climbs', S.moss),
+      workout('ride.recovery', 'Recovery Spin', S.mint),
+      workout('ride.indoor', 'Indoor Trainer', S.indigo),
+      workout('ride.group', 'Group Ride', S.amber),
+      workout('ride.gravel', 'Gravel / MTB', S.sand),
+      workout('ride.race', 'Race', S.crimson),
     ],
-  },
-  {
+  }),
+  sport({
     id: 'swim',
     name: 'Swim',
     addLabel: 'Add swim',
@@ -110,47 +111,47 @@ export const SPORTS: Sport[] = [
     color: S.sky.color,
     distanceUnit: 'm',
     workouts: [
-      workout('swim.technique', 'Technique', 'swim', S.sky),
-      workout('swim.endurance', 'Endurance', 'waves', S.ocean),
-      workout('swim.intervals', 'Intervals', 'timer-outline', S.ember),
-      workout('swim.open-water', 'Open Water', 'water', S.lagoon),
-      workout('swim.recovery', 'Recovery', 'pool', S.mint),
-      workout('swim.race', 'Race', 'flag-checkered', S.crimson),
+      workout('swim.technique', 'Technique', S.sky),
+      workout('swim.endurance', 'Endurance', S.ocean),
+      workout('swim.intervals', 'Intervals', S.ember),
+      workout('swim.open-water', 'Open Water', S.lagoon),
+      workout('swim.recovery', 'Recovery', S.mint),
+      workout('swim.race', 'Race', S.crimson),
     ],
-  },
-  {
+  }),
+  sport({
     id: 'strength',
     name: 'Strength',
     addLabel: 'Add strength',
     icon: 'weight-lifter',
     color: S.crimson.color,
     workouts: [
-      workout('strength.full', 'Full Body', 'weight-lifter', S.crimson),
-      workout('strength.upper', 'Upper Body', 'arm-flex', S.ember),
-      workout('strength.lower', 'Lower Body', 'weight', S.violet),
-      workout('strength.core', 'Core', 'target', S.amber),
-      workout('strength.kettlebell', 'Kettlebell', 'kettlebell', S.sunset),
-      workout('strength.plyo', 'Plyometrics', 'jump-rope', S.lime),
+      workout('strength.full', 'Full Body', S.crimson),
+      workout('strength.upper', 'Upper Body', S.ember),
+      workout('strength.lower', 'Lower Body', S.violet),
+      workout('strength.core', 'Core', S.amber),
+      workout('strength.kettlebell', 'Kettlebell', S.sunset),
+      workout('strength.plyo', 'Plyometrics', S.lime),
     ],
-  },
-  {
+  }),
+  sport({
     id: 'hyrox',
     name: 'Hyrox',
     addLabel: 'Add Hyrox',
     icon: 'fire',
     color: S.ember.color,
     workouts: [
-      workout('hyrox.combo', 'Combo', 'shuffle-variant', S.ember),
-      workout('hyrox.amrap', 'AMRAP', 'repeat', S.amber),
-      workout('hyrox.emom', 'EMOM', 'timer-outline', S.sky),
-      workout('hyrox.metcon', 'METCON', 'fire', S.crimson),
-      workout('hyrox.for-time', 'For Time', 'timer-sand', S.violet),
-      workout('hyrox.compromised', 'Compromised Run', 'run-fast', S.lime),
-      workout('hyrox.stations', 'Stations', 'dumbbell', S.steel),
-      workout('hyrox.simulation', 'Simulation', 'progress-clock', S.plum),
-      workout('hyrox.race', 'Race', 'trophy-outline', S.magenta),
+      workout('hyrox.combo', 'Combo', S.ember),
+      workout('hyrox.amrap', 'AMRAP', S.amber),
+      workout('hyrox.emom', 'EMOM', S.sky),
+      workout('hyrox.metcon', 'METCON', S.crimson),
+      workout('hyrox.for-time', 'For Time', S.violet),
+      workout('hyrox.compromised', 'Compromised Run', S.lime),
+      workout('hyrox.stations', 'Stations', S.steel),
+      workout('hyrox.simulation', 'Simulation', S.plum),
+      workout('hyrox.race', 'Race', S.magenta),
     ],
-  },
+  }),
 ];
 
 const SPORTS_BY_ID = new Map(SPORTS.map((sport) => [sport.id, sport]));

@@ -13,16 +13,9 @@ const KIND_LABEL: Record<StepKind, string> = {
   rest: 'Rest',
 };
 
-const KIND_ICON: Record<Exclude<StepKind, 'work'>, IconName> = {
-  warmup: 'thermometer-chevron-up',
-  recovery: 'walk',
-  cooldown: 'snowflake',
-  rest: 'pause-circle-outline',
-};
-
 /**
- * Read-only view of a structured workout: summary, then each block with its repeat count. Work steps use the
- * session's own icon and colour; warm-up, recovery, cool-down and rest have their own icons.
+ * Read-only view of a structured workout: summary, then each block with its repeat count. Every step shows
+ * the sport's icon (the app has one icon per sport) — in the session colour for work, muted otherwise.
  */
 export function WorkoutDetails({ plan, color, icon }: { plan: WorkoutPlan; color: string; icon?: IconName }) {
   return (
@@ -33,12 +26,16 @@ export function WorkoutDetails({ plan, color, icon }: { plan: WorkoutPlan; color
           {block.repeat > 1 && <Text style={styles.repeat}>{block.repeat} ×</Text>}
           {block.steps.map((step, i) => (
             <View key={i} style={styles.step}>
-              <MaterialCommunityIcons
-                name={step.kind === 'work' ? (icon ?? 'lightning-bolt') : KIND_ICON[step.kind]}
-                size={17}
-                color={step.kind === 'work' ? color : Colors.textSubtle}
-                style={styles.stepIcon}
-              />
+              {icon ? (
+                <MaterialCommunityIcons
+                  name={icon}
+                  size={17}
+                  color={step.kind === 'work' ? color : Colors.textSubtle}
+                  style={styles.stepIcon}
+                />
+              ) : (
+                <View style={[styles.stepIcon, styles.noIcon]} />
+              )}
               <View style={styles.stepBody}>
                 <Text style={styles.stepTitle}>{step.label ?? KIND_LABEL[step.kind]}</Text>
                 {!!describeStep(step) && <Text style={styles.stepMeta}>{describeStep(step)}</Text>}
@@ -82,6 +79,9 @@ const styles = StyleSheet.create({
   stepIcon: {
     width: 20,
     marginTop: 1,
+  },
+  noIcon: {
+    height: 17,
   },
   stepBody: {
     flex: 1,

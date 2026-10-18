@@ -32,7 +32,7 @@ export function ActivityCard({ activity, onPress, onToggleCompleted, style }: Pr
       accessibilityLabel={`${activity.title}, ${summary}${activity.completed ? ', completed' : ''}`}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed, style]}>
       <View style={[styles.strip, { backgroundColor: accent }]} />
-      <MaterialCommunityIcons name={type?.icon ?? 'help-circle-outline'} size={18} color={accent} style={styles.icon} />
+      {type && <MaterialCommunityIcons name={type.icon} size={18} color={accent} style={styles.icon} />}
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
           {activity.title}

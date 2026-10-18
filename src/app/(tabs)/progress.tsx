@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -35,8 +36,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 type Metric = 'distance' | 'time' | 'count';
 
-const TABS: { id: SportFilter; label: string; icon: IconName }[] = [
-  { id: ALL_SPORTS, label: 'All', icon: 'lightning-bolt' },
+/** Sport tabs show their sport's icon; "All" is text only (icons are reserved for the five sports). */
+const TABS: { id: SportFilter; label: string; icon?: IconName }[] = [
+  { id: ALL_SPORTS, label: 'All' },
   ...SPORTS.map((s) => ({ id: s.id, label: s.name, icon: s.icon })),
 ];
 
@@ -104,7 +106,7 @@ function SessionRow({ activity }: { activity: Activity }) {
       onPress={() => router.push({ pathname: '/activity/[id]', params: { id: activity.id } })}
       style={({ pressed }) => [styles.listRow, pressed && styles.listRowPressed]}>
       <View style={[styles.listIcon, { backgroundColor: type?.color ?? Colors.marker }]}>
-        <MaterialCommunityIcons name={type?.icon ?? 'help'} size={18} color="#fff" />
+        {type && <MaterialCommunityIcons name={type.icon} size={18} color="#fff" />}
       </View>
       <View style={styles.listBody}>
         <Text style={styles.listTitle} numberOfLines={1}>
@@ -168,9 +170,13 @@ export default function ProgressScreen() {
               accessibilityLabel={tab.label}
               accessibilityState={{ selected: active }}
               style={styles.tab}>
-              <MaterialCommunityIcons name={tab.icon} size={22} color={active ? Colors.text : Colors.tabInactive} />
+              {tab.icon ? (
+                <MaterialCommunityIcons name={tab.icon} size={22} color={active ? Colors.text : Colors.tabInactive} />
+              ) : (
+                <Text style={[styles.tabAll, active && styles.tabLabelActive]}>All</Text>
+              )}
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>
-                {tab.label}
+                {tab.icon ? tab.label : ' '}
               </Text>
               <View style={[styles.tabUnderline, active && styles.tabUnderlineActive]} />
             </Pressable>
@@ -214,7 +220,7 @@ export default function ProgressScreen() {
         </View>
 
         <View style={styles.streak}>
-          <MaterialCommunityIcons name="fire" size={22} color={streak ? Colors.chart : Colors.textSubtle} />
+          <Ionicons name="calendar-outline" size={22} color={streak ? Colors.chart : Colors.textSubtle} />
           <View>
             <Text style={styles.streakValue}>
               {streak} week{streak === 1 ? '' : 's'}
@@ -270,6 +276,13 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     color: Colors.text,
+  },
+  tabAll: {
+    height: 22,
+    color: Colors.tabInactive,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '700',
   },
   tabUnderline: {
     marginTop: 6,
