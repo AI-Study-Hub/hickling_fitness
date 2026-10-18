@@ -3,7 +3,13 @@
 # Hickling Fitness — project notes
 
 Personal iOS app (single user, Ewan) that copies Runna's look and flow but supports every sport.
-Expo SDK 58 · React Native 0.88 · Expo Router · TypeScript · Zustand. Dark theme only.
+Expo SDK 57 · React Native 0.86 · Expo Router · TypeScript · Zustand. Dark theme only.
+
+**SDK version is pinned to what the App Store's Expo Go supports.** SDK 58 shipped 15 Oct 2026 but its
+Expo Go wasn't in the App Store yet, so the project was moved back to 57. Only upgrade
+(`npx expo install expo@^58 && npx expo install --fix`) once Expo Go supports it — the new Expo Go
+drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab bar props
+(`emitter`/`navigateToTab` instead of `navigation`) — see `src/components/tab-bar.tsx`.
 
 ## Layout
 

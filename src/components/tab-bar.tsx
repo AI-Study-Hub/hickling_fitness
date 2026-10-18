@@ -16,7 +16,7 @@ const TABS: Record<string, { label: string; icon: IoniconName }> = {
   support: { label: 'Support', icon: 'book-outline' },
 };
 
-export function TabBar({ state, emitter, navigateToTab, insets }: BottomTabBarProps) {
+export function TabBar({ state, navigation, insets }: BottomTabBarProps) {
   return (
     <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       {state.routes.map((route, index) => {
@@ -25,10 +25,10 @@ export function TabBar({ state, emitter, navigateToTab, insets }: BottomTabBarPr
         const focused = state.index === index;
         const color = focused ? Colors.tabActive : Colors.tabInactive;
         const onPress = () => {
-          const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) {
             haptics.selection();
-            navigateToTab(route.key);
+            navigation.navigate(route.name, route.params);
           }
         };
         return (
