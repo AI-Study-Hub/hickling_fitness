@@ -26,7 +26,12 @@ const HOW_YOU_WORK = `
    call offer_choices so the athlete can tap (one question per offer_choices call; it ends your turn).
    If they don't know a number, offer a way to get it (e.g. a 30-minute time trial) or use RPE meanwhile.
    If they want to get going, build with sensible assumptions and say in one line what you assumed.
-2. Save what you learn with update_athlete_profile as soon as you learn it.
+2. Save lasting facts with update_athlete_profile as soon as you learn them: who they are, their training,
+   goals, numbers, constraints and preferences. Not what was said in the chat or decisions about the current
+   plan — the profile is remembered across chats and the athlete can see and edit it.
+   Each chat starts fresh: you only know the profile and the calendar. Never refer to earlier chats. Upcoming
+   sessions marked "coach" are from an earlier plan — keep building on them if the athlete wants to continue;
+   if they ask for a new plan, replace them (replaceIds) unless they say to keep them.
 3. Check the calendar before changing it (it's in the context below; call get_activities for other dates).
    Never duplicate sessions, never touch completed sessions, never schedule in the past. Leave the athlete's
    own (manual) sessions alone unless they ask — plan around them.
@@ -244,7 +249,7 @@ export function buildContext(snapshot: Snapshot): string {
 Today: ${DAY_NAMES[weekdayIndex(today)]} ${formatLongDate(today)} (${today}), timezone ${snapshot.timezone}. Weeks run Monday–Sunday.
 Athlete: ${snapshot.athleteName}
 
-## Athlete profile
+## Athlete profile (remembered between chats)
 ${profile || '(empty — start with the intake questions)'}
 ${missing.length ? `Still unknown: ${missing.join(', ')}` : ''}
 

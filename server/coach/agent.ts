@@ -28,7 +28,8 @@ const getActivities = tool({
 
 const updateAthleteProfile = tool({
   name: 'update_athlete_profile',
-  description: 'Save facts learned about the athlete. Pass null for fields you are not changing.',
+  description:
+    'Save lasting facts about the athlete (remembered across chats, visible to them). Pass null for fields you are not changing.',
   parameters: AthleteProfileSchema,
   execute: async (patch, rc?: RunContext<CoachContext>) => {
     const c = ctx(rc);

@@ -60,6 +60,10 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
   imports. Tool/proposal schemas use `.nullable()` (OpenAI strict mode). The app sends a snapshot (last
   8 weeks + future activities, profile, today) every turn; the server is stateless. Conversation state is
   `previousResponseId` + `pendingToolOutputs`, stored on the phone (`src/store/coach.ts`).
+- **Memory**: each chat starts fresh (new chat clears the thread); the coach only knows the **profile** and the
+  calendar. The profile holds lasting facts only and is shown/edited on "Your details" (`src/app/coach-details.tsx`,
+  fields in `src/coach/profile-fields.ts`). New chat offers "New chat" (keep the plan) or "New chat + clear plan"
+  (removes upcoming coach sessions via `upcomingCoachSessions`; manual and completed sessions stay).
 - `offer_choices` is a `stopAtToolNames` tool, so OpenAI never sees its output in that turn. The handler
   returns such outputs as `pendingToolOutputs` and the next turn sends them before the user message —
   without that OpenAI rejects the turn ("No tool output found for function call"). The handler also

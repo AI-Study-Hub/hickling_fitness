@@ -91,3 +91,10 @@ export function planApplication(proposal: Proposal, activities: Record<string, A
   }
   return result;
 }
+
+/** Upcoming sessions the coach planned (not completed, today or later) — what "clear plan" removes. */
+export function upcomingCoachSessions(activities: Record<string, Activity>, today: string): string[] {
+  return Object.values(activities)
+    .filter((a) => a.source === 'coach' && !a.completed && a.date >= today)
+    .map((a) => a.id);
+}

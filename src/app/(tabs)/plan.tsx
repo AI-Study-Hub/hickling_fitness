@@ -1,14 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { upcomingCoachSessions } from '@/coach/apply';
+import { knownDetails } from '@/coach/profile-fields';
 import { useCoachConversation } from '@/coach/use-coach-conversation';
 import { ChoiceChips, CoachBubble, LiveBubble, NoteLine, UserBubble } from '@/components/coach/messages';
 import { ProposalCard } from '@/components/coach/proposal-card';
 import { WeekBalance } from '@/components/coach/week-balance';
 import { ScreenHeader } from '@/components/screen-header';
 import { Colors, Radius, Type } from '@/constants/theme';
+import { todayISO } from '@/lib/dates';
 import { useActivities } from '@/store/activities';
 import { useCoach } from '@/store/coach';
 
@@ -24,7 +28,8 @@ function Intro({ onPick }: { onPick: (text: string) => void }) {
       <Text style={styles.introText}>
         {'I build your training around the Norwegian method — mostly easy, with controlled sub-threshold ' +
           "sessions — across running, riding, swimming, strength and Hyrox. Tell me what you're aiming for and " +
-          "I'll ask a few questions first. Nothing goes in your calendar until you accept it."}
+          "I'll ask a few questions first. Nothing goes in your calendar until you accept it. Each chat starts " +
+          'fresh, but I remember the key details about you — tap the person icon to see or edit them.'}
       </Text>
       <View style={styles.starters}>
         {STARTERS.map((s) => (
@@ -58,22 +63,51 @@ export default function PlanScreen() {
     setDraft('');
   };
 
-  const confirmNew = () =>
-    Alert.alert('New conversation?', 'Your coach keeps what it knows about you and your calendar.', [
+  // Two ways to start fresh: a new chat on top of the current plan, or a new chat with the coach's upcoming
+  // sessions cleared. Either way the athlete's details are kept.
+  const confirmNew = () => {
+    const known = knownDetails(useCoach.getState().profile);
+    const planned = upcomingCoachSessions(useActivities.getState().activities, todayISO());
+    const keeps = known.length
+      ? `Your coach keeps your details (${known.slice(0, 4).join(', ').toLowerCase()}${known.length > 4 ? '…' : ''}).`
+      : 'Your coach keeps your details as it learns them.';
+    const clear = planned.length
+      ? `\n\n“Clear plan” also removes the ${planned.length} upcoming session${planned.length === 1 ? '' : 's'} it planned, so you can start a new plan from scratch. Your own and completed sessions stay.`
+      : '';
+    Alert.alert('Start a new chat?', keeps + clear, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Start fresh', onPress: newConversation },
+      { text: 'New chat', onPress: newConversation },
+      ...(planned.length
+        ? [
+            {
+              text: 'New chat + clear plan',
+              style: 'destructive' as const,
+              onPress: () => {
+                const { removeActivity } = useActivities.getState();
+                planned.forEach(removeActivity);
+                newConversation();
+              },
+            },
+          ]
+        : []),
     ]);
+  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <ScreenHeader
         title="Plan"
         right={
-          messages.length > 0 && (
-            <Pressable onPress={confirmNew} hitSlop={10} accessibilityLabel="New conversation" disabled={conv.busy}>
-              <Ionicons name="create-outline" size={25} color={Colors.text} />
+          <>
+            <Pressable onPress={() => router.push('/coach-details')} hitSlop={10} accessibilityLabel="Your details">
+              <Ionicons name="person-circle-outline" size={26} color={Colors.text} />
             </Pressable>
-          )
+            {messages.length > 0 && (
+              <Pressable onPress={confirmNew} hitSlop={10} accessibilityLabel="New chat" disabled={conv.busy}>
+                <Ionicons name="create-outline" size={25} color={Colors.text} />
+              </Pressable>
+            )}
+          </>
         }
       />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

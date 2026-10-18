@@ -40,6 +40,8 @@ interface CoachState {
   updateProposal: (messageId: string, proposalId: string, patch: Partial<ProposalView>) => void;
   setThread: (lastResponseId: string | null, pendingToolOutputs: PendingToolOutput[]) => void;
   mergeProfile: (patch: AthleteProfilePatch) => void;
+  /** Replaces the profile (edited on the "Your details" screen). */
+  setProfile: (profile: AthleteProfilePatch) => void;
   /** Starts a new conversation; the profile is kept. */
   newConversation: () => void;
 }
@@ -68,6 +70,7 @@ export const useCoach = create<CoachState>()(
         })),
       setThread: (lastResponseId, pendingToolOutputs) => set({ lastResponseId, pendingToolOutputs }),
       mergeProfile: (patch) => set((s) => ({ profile: { ...s.profile, ...patch } })),
+      setProfile: (profile) => set({ profile }),
       newConversation: () => set({ messages: [], lastResponseId: null, pendingToolOutputs: [] }),
     }),
     {

@@ -1,6 +1,7 @@
-import { planApplication, toWorkoutPlan } from '@/coach/apply';
+import { planApplication, toWorkoutPlan, upcomingCoachSessions } from '@/coach/apply';
 import { TurnRequestSchema, type PlanAction, type Proposal } from '@/coach/contract';
 import { easyShare, intensityOf } from '@/coach/intensity';
+import { fromForm, knownDetails, toForm } from '@/coach/profile-fields';
 import { buildSnapshot } from '@/coach/snapshot';
 import type { Activity } from '@/store/activities';
 
@@ -127,3 +128,32 @@ describe('intensity', () => {
     expect(share).toBeCloseTo(0.8);
   });
 });
+
+describe('starting fresh', () => {
+  it('finds the upcoming sessions the coach planned, not the athlete’s own or completed ones', () => {
+    const mine: Activity = { id: 'mine', workoutTypeId: 'run.easy', title: 'Mine', date: '2026-10-21', completed: false, createdAt: 3, source: 'manual' };
+    const past: Activity = { ...activities.planned, id: 'past', date: '2026-10-10' };
+    expect(upcomingCoachSessions({ ...activities, mine, past }, '2026-10-18')).toEqual(['planned']);
+  });
+
+  it('edits the remembered details as form text and back', () => {
+    const profile = { goal: 'Hyrox Open', goalDate: '2026-11-24', sports: ['run', 'hyrox'], age: 34, lthr: 172 };
+    const form = toForm(profile);
+    expect(form.sports).toBe('run, hyrox');
+    expect(form.age).toBe('34');
+    expect(form.health).toBe('');
+    expect(fromForm(form)).toEqual({ profile, errors: [] });
+
+    // Clearing a field forgets it; bad numbers and dates are reported.
+    expect(fromForm({ ...form, goal: '  ' }).profile).not.toHaveProperty('goal');
+    expect(fromForm({ ...form, age: 'old', goalDate: '24 Nov' }).errors).toEqual([
+      'Race date should look like 2026-11-24.',
+      'Age should be a number.',
+    ]);
+  });
+
+  it('lists what the coach knows', () => {
+    expect(knownDetails({ goal: 'Hyrox', sports: [], age: 34, health: null })).toEqual(['Goal', 'Age']);
+  });
+});
+

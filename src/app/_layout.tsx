@@ -29,6 +29,10 @@ export default function RootLayout() {
           name="activity/[id]"
           options={{ presentation: 'modal', contentStyle: { backgroundColor: Colors.backgroundAlt } }}
         />
+        <Stack.Screen
+          name="coach-details"
+          options={{ presentation: 'modal', contentStyle: { backgroundColor: Colors.backgroundAlt } }}
+        />
       </Stack>
     </ThemeProvider>
   );
