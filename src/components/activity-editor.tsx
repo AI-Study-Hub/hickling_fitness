@@ -147,7 +147,7 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
 
         {activity?.workout && (
           <Field label="Workout">
-            <WorkoutDetails plan={activity.workout} color={type.color} />
+            <WorkoutDetails plan={activity.workout} color={type.color} icon={type.icon} />
           </Field>
         )}
 

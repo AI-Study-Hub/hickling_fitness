@@ -7,6 +7,7 @@ import {
   type TurnEvent,
 } from '../../src/coach/contract';
 import { createContext, type CoachContext } from './agent';
+import type { ReviewFn } from './reviewer';
 
 const WORKING_LABELS: Record<string, string> = {
   get_activities: 'Checking your calendar',
@@ -38,6 +39,15 @@ export function danglingCallId(error: unknown): string | null {
 
 const MAX_REPAIRS = 3;
 
+/**
+ * What to put between text written before and after a tool call. The model often keeps writing the same
+ * sentence ("That" … tool call … "'s a strong base"), so only start a new paragraph after a finished one.
+ */
+export function joinAfterTool(textSoFar: string): string {
+  if (/\n\s*$/.test(textSoFar)) return '';
+  return /[.!?:…)]["'”’]?\s*$/.test(textSoFar) ? '\n\n' : '';
+}
+
 type RunItems = { type: string; rawItem?: unknown }[];
 
 /**
@@ -66,11 +76,13 @@ interface Options {
   runner: Runner;
   /** Shared secret the app sends as a Bearer token. Unset = no auth (logged as a warning at startup). */
   token?: string;
+  /** Reviewer agent run on every proposal; omit to skip reviews. */
+  review?: ReviewFn;
   maxTurns?: number;
 }
 
 /** `POST /coach/turn` — streams NDJSON `StreamLine`s. Framework-agnostic: (Request) => Response. */
-export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Options) {
+export function createCoachHandler({ agent, runner, token, review, maxTurns = 16 }: Options) {
   return async function coachTurn(req: Request): Promise<Response> {
     if (token && req.headers.get('authorization') !== `Bearer ${token}`) {
       return Response.json({ error: 'Unauthorised — check EXPO_PUBLIC_COACH_TOKEN' }, { status: 401 });
@@ -85,7 +97,8 @@ export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Opti
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (line: StreamLine) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
-        const context = createContext(snapshot);
+        const context = createContext(snapshot, review ?? null);
+        context.onProgress = (label) => send({ type: 'working', label });
         let text = '';
         let pendingBreak = false;
         let pendingAfter: PendingToolOutput[] = [];
@@ -102,7 +115,7 @@ export function createCoachHandler({ agent, runner, token, maxTurns = 16 }: Opti
             if (ev.type === 'raw_model_stream_event' && ev.data.type === 'output_text_delta') {
               let delta = ev.data.delta;
               if (pendingBreak && text && delta) {
-                delta = `\n\n${delta}`;
+                delta = `${joinAfterTool(text)}${delta}`;
                 pendingBreak = false;
               }
               text += delta;

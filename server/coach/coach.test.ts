@@ -1,9 +1,11 @@
 /** @jest-environment node */
 import { assistantMessage, functionCall, ScriptedModel } from '@openai/agents/testing';
 
-import type { PlanAction, Snapshot, StreamLine } from '../../src/coach/contract';
+import type { PlanAction, Review, Snapshot, StreamLine } from '../../src/coach/contract';
+import { addDays } from '../../src/lib/dates';
 import { createCoachAgent, createRunner } from './agent';
-import { createCoachHandler, danglingCallId, eventToInput } from './handler';
+import { buildReviewInput, createReviewFn, type ReviewFn } from './reviewer';
+import { createCoachHandler, danglingCallId, eventToInput, joinAfterTool } from './handler';
 import { buildInstructions } from './instructions';
 import { validateActions } from './validate';
 
@@ -50,8 +52,8 @@ const create = (date: string, intensity: 'easy' | 'moderate' | 'hard' = 'moderat
   workout: workout(intensity),
 });
 
-async function turn(model: ScriptedModel, body: object, token?: string) {
-  const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRunner(model), token: 'secret' });
+async function turn(model: ScriptedModel, body: object, token?: string, review?: ReviewFn) {
+  const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRunner(model), token: 'secret', review });
   const res = await handler(
     new Request('http://coach/coach/turn', {
       method: 'POST',
@@ -108,6 +110,47 @@ describe('validateActions', () => {
   });
 });
 
+describe('progression checks', () => {
+  /** Three completed easy runs (Tue, Thu, Sat) in each of the given weeks. */
+  const history = (weeks: string[], minutes = 60): Snapshot => ({
+    ...snapshot,
+    activities: weeks.flatMap((week, w) =>
+      [1, 3, 5].map((d) => ({
+        id: `h${w}-${d}`,
+        date: addDays(week, d),
+        workoutTypeId: 'run.easy',
+        title: 'Easy',
+        completed: true,
+        durationSec: minutes * 60,
+        workout: { summary: 'Easy', intensity: 'easy' as const, blocks: [] },
+      })),
+    ),
+  });
+  const easy = (date: string, minutes: number): PlanAction => ({
+    ...(create(date, 'easy', 'run.easy') as Extract<PlanAction, { op: 'create' }>),
+    durationSec: minutes * 60,
+  });
+
+  it('flags a weekly jump and a long-run spike', () => {
+    const plan = ['2026-10-20', '2026-10-22', '2026-10-24', '2026-10-25'].map((d) => easy(d, 75));
+    const text = validateActions(plan, history(['2026-09-28', '2026-10-05', '2026-10-12'])).warnings.join(' ');
+    expect(text).toMatch(/Week of 2026-10-19 .*total time \+67% \(300 vs 180 min\), running \+67%/);
+    expect(text).toMatch(/run.easy on 2026-10-20 is 75 min — \+25% on the longest run .* \(60 min\); keep it ≤ 66 min/);
+    // Later runs compare with the planned ones before them, so a steady build isn't flagged again.
+    expect(text).not.toMatch(/on 2026-10-22/);
+  });
+
+  it('asks for a deload after three build weeks, not after a lighter one', () => {
+    const steady = ['2026-10-20', '2026-10-22', '2026-10-24'].map((d) => easy(d, 60));
+    const built = history(['2026-09-28', '2026-10-05', '2026-10-12']);
+    expect(validateActions(steady, built).warnings.join(' ')).toMatch(/week 4 in a row without a lighter week/);
+
+    const deload = ['2026-10-20', '2026-10-24'].map((d) => easy(d, 60));
+    expect(validateActions(deload, built).warnings).toEqual([]);
+    expect(validateActions(steady, history(['2026-09-28', '2026-10-12']))).toEqual({ errors: [], warnings: [] });
+  });
+});
+
 describe('instructions', () => {
   it('include the Norwegian rules, the profile and the calendar', () => {
     const text = buildInstructions(snapshot);
@@ -116,6 +159,16 @@ describe('instructions', () => {
     expect(text).toMatch(/a-next \| Tue 2026-10-20 \| run.easy/);
     expect(text).toMatch(/Still unknown: currentVolume, availability, health/);
     expect(text).toMatch(/hyrox.amrap \(AMRAP\)/);
+  });
+});
+
+describe('joinAfterTool', () => {
+  it('continues an unfinished sentence and starts a paragraph after a finished one', () => {
+    expect(joinAfterTool('That')).toBe('');
+    expect(joinAfterTool('What')).toBe('');
+    expect(joinAfterTool('Great, thanks.')).toBe('\n\n');
+    expect(joinAfterTool('Quick question:')).toBe('\n\n');
+    expect(joinAfterTool('Done!\n')).toBe('');
   });
 });
 
@@ -249,6 +302,7 @@ function nulls() {
     goal: null,
     goalDate: null,
     sports: null,
+    age: null,
     experience: null,
     currentVolume: null,
     recentResults: null,
@@ -264,3 +318,68 @@ function nulls() {
     preferences: null,
   };
 }
+
+describe('reviewer', () => {
+  const blocker: Review = {
+    verdict: 'revise',
+    issues: [{ severity: 'blocker', session: 'Wed 21 Oct', problem: 'Quality on back-to-back days', fix: 'Move it to Thursday' }],
+    summary: 'Too dense.',
+  };
+  const approve: Review = { verdict: 'approve', issues: [], summary: 'Sensible first build week.' };
+  const propose = (callId: string, date = '2026-10-21') =>
+    functionCall('propose_plan_changes', { summary: 'Week 1', actions: [create(date)] }, { callId });
+
+  it('sends the proposal back on blockers, then shows the fixed one as approved', async () => {
+    const reviews = [blocker, approve];
+    const review: ReviewFn = jest.fn(async () => reviews.shift()!);
+    const model = new ScriptedModel([[propose('c1')], [propose('c2', '2026-10-22')], [assistantMessage('Fixed and ready.')]]);
+    const { lines } = await turn(model, message('Plan my week'), undefined, review);
+
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(model.calls[1].request.input)).toMatch(/reviewer found problems.*back-to-back/);
+    const d = done(lines);
+    expect(d.proposals).toHaveLength(1);
+    expect(d.proposals[0].review).toEqual({ verdict: 'approve', summary: 'Sensible first build week.', notes: [] });
+    expect(lines.some((l) => l.type === 'working' && l.label === 'Reviewing against the training rules')).toBe(true);
+    model.assertComplete();
+  });
+
+  it('shows the proposal with its concerns after the maximum review rounds', async () => {
+    const review: ReviewFn = jest.fn(async () => blocker);
+    const model = new ScriptedModel([[propose('c1')], [propose('c2')], [propose('c3')], [assistantMessage('Here it is.')]]);
+    const { lines } = await turn(model, message('Plan my week'), undefined, review);
+    const p = done(lines).proposals;
+    expect(p).toHaveLength(1);
+    expect(p[0].review?.verdict).toBe('revise');
+    expect(p[0].review?.notes[0]).toMatch(/Wed 21 Oct: Quality on back-to-back days → Move it to Thursday/);
+    model.assertComplete();
+  });
+
+  it("doesn't block the proposal if the review fails", async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const review: ReviewFn = async () => {
+      throw new Error('reviewer down');
+    };
+    const model = new ScriptedModel([[propose('c1')], [assistantMessage('Here it is.')]]);
+    const { lines } = await turn(model, message('Plan my week'), undefined, review);
+    expect(done(lines).proposals[0].review).toBeNull();
+  });
+
+  it('runs the reviewer agent and returns its structured verdict', async () => {
+    const model = new ScriptedModel([[assistantMessage(JSON.stringify(approve))]]);
+    const review = createReviewFn(createRunner(model, 'reviewer'));
+    await expect(review({ snapshot, summary: 'Week 1', actions: [create('2026-10-21')], warnings: [] })).resolves.toEqual(approve);
+    const input = JSON.stringify(model.calls[0].request.input);
+    expect(input).toMatch(/Completed weekly load, last 6 weeks/);
+    expect(input).toMatch(/CREATE 2026-10-21 run.intervals/);
+  });
+
+  it('builds a review input with loads, the calendar around the plan and the proposed workouts', () => {
+    const text = buildReviewInput({ snapshot, summary: 'Week 1', actions: [create('2026-10-21')], warnings: ['Two hard sessions'] });
+    expect(text).toMatch(/goal: Sub-45 10k/);
+    expect(text).toMatch(/2026-10-12: 1 sessions, 0h 45m \(run 0h 45m\), 0 quality/);
+    expect(text).toMatch(/warmup 15 min \| 10× \[work 3 min Z3 4:15–4:20 \/km RPE 6, recovery 1 min Z1/);
+    expect(text).toMatch(/a-next \| Tue 2026-10-20/);
+    expect(text).toMatch(/- Two hard sessions/);
+  });
+});

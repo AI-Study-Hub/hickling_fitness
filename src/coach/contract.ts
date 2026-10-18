@@ -72,10 +72,34 @@ export const DeleteActionSchema = z.object({
 export const ActionSchema = z.union([CreateActionSchema, UpdateActionSchema, DeleteActionSchema]);
 export type PlanAction = z.infer<typeof ActionSchema>;
 
+// ── Review of a proposal (the reviewer agent's structured output) ───────────────────────────────────
+
+export const ReviewIssueSchema = z.object({
+  severity: z.enum(['blocker', 'minor']).describe('blocker = breaks a rule and must be fixed; minor = worth a note'),
+  session: z.string().nullable().describe('Which session, e.g. "Thu 22 Oct · 4 × 6 min sub-T", or null for the plan'),
+  problem: z.string(),
+  fix: z.string(),
+});
+
+export const ReviewSchema = z.object({
+  verdict: z.enum(['approve', 'revise']).describe('revise only if there is at least one blocker'),
+  issues: z.array(ReviewIssueSchema),
+  summary: z.string().describe('One sentence on how the plan fits the rules'),
+});
+export type Review = z.infer<typeof ReviewSchema>;
+
+/** What the athlete sees about the review on the proposal card. */
+export const ProposalReviewSchema = z.object({
+  verdict: z.enum(['approve', 'revise']),
+  summary: z.string(),
+  notes: z.array(z.string()),
+});
+
 export const ProposalSchema = z.object({
   id: z.string(),
   summary: z.string(),
   actions: z.array(ActionSchema),
+  review: ProposalReviewSchema.nullish(),
 });
 export type Proposal = z.infer<typeof ProposalSchema>;
 
@@ -85,6 +109,7 @@ export const AthleteProfileSchema = z.object({
   goal: z.string().nullable().describe('Event / target, e.g. "Sub-45 10k" or "Hyrox Open, sub-1:20"'),
   goalDate: IsoDate.nullable(),
   sports: z.array(z.string()).nullable(),
+  age: z.number().nullable().describe('Years — 45+ usually means 2:1 build/deload cycles'),
   experience: z.string().nullable().describe('Years training, consistency, highest sustained volume'),
   currentVolume: z.string().nullable().describe('Last 4–8 weeks per sport: hours/km, sessions, longest'),
   recentResults: z.string().nullable().describe('Races or tests with dates'),

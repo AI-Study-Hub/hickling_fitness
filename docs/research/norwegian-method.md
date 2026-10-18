@@ -170,7 +170,8 @@ deload week 4 or 5 · weeks 5–8: 3 Q (10–12×3, 5–6×6, 3–4×10 min).
 Order: add reps/length first → raise pace only after the same session twice at ≥3–5 bpm lower HR or lower
 RPE → +1–3 s/km, +2–3% power, or +1 s/100 m. Retest LTHR/FTP/CSS every 6–8 weeks. Caps: ≤45–50 min
 sub-threshold work per session and ≤25–30% of weekly running time; easy volume +≤10%/week. Change one variable
-at a time. Deload every 3–4 weeks: volume −25–35%, keep 1–2 shortened Q [S]. Phases: general (pyramidal,
+at a time. Deload every 3–4 weeks: volume −25–35%, keep 1–2 shortened Q [S]. Week-to-week caps, single-session
+spikes, deload design and race builds are covered in `progression-deload.md`. Phases: general (pyramidal,
 sub-threshold) → specific (race-specific replaces X) → competition (more polarized) [S]. Taper: volume −41–60%
 over ≤21 days keeping intensity and frequency (Wang 2023; Bosquet 2007) [S]; 7–10 days for 5k–HM, 10–14 for
 marathon/70.3, 14–21 for Ironman; last sub-threshold session 3–5 days out at 50–60% of usual reps [I].

@@ -66,8 +66,15 @@ Settings in `.env.local`:
 | `COACH_MODEL` | `gpt-5.6-terra` | `gpt-5.6-luna` is ~10× cheaper, `gpt-5.6-sol` is stronger |
 | `COACH_REASONING` | `low` | `medium` / `high` for more careful plans (slower, pricier) |
 | `COACH_TRACING` | on | `off` to stop sending traces to platform.openai.com/traces (health details are never included) |
+| `COACH_REVIEW` | on | `off` to skip the reviewer (a second agent that checks every plan against the research) |
+| `COACH_REVIEW_MODEL` | same as `COACH_MODEL` | model for the reviewer |
+| `COACH_REVIEW_REASONING` | `medium` | reasoning effort for the reviewer |
 
-Rough cost on Terra: ~$0.40 for a full plan-building conversation, ~$0.05–0.10 for a tweak.
+Rough cost on Terra: ~$0.40–0.60 for a full plan-building conversation (the reviewer adds ~$0.02–0.05 per
+plan it checks), ~$0.05–0.15 for a tweak.
+
+How the coach plans: the Norwegian method (80/20, sub-threshold intervals) in 3:1 build/deload blocks, with
+caps on how fast weeks and single sessions grow. The research is in `docs/research/`.
 
 If the Plan tab says it can't reach the coach: check `npm run dev` is running, the phone is on the same
 Wi-Fi as the Mac, and allow incoming connections for `node` if macOS asks. `npm run coach:demo` runs a

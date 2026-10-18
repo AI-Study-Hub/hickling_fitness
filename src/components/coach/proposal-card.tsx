@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -48,7 +49,9 @@ function ActionRow({ action, existing }: { action: PlanAction; existing?: Activi
           <Text style={styles.dateDay}>{date ? WEEKDAYS_SHORT[weekdayIndex(date)] : ''}</Text>
           <Text style={styles.dateNum}>{date ? dayOfMonth(date) : ''}</Text>
         </View>
-        <View style={[styles.strip, { backgroundColor: type?.color ?? Colors.marker }]} />
+        <View style={[styles.iconBadge, { backgroundColor: type?.color ?? Colors.marker }]}>
+          <MaterialCommunityIcons name={type?.icon ?? 'help-circle-outline'} size={15} color="#fff" />
+        </View>
         <View style={styles.rowBody}>
           <Text style={[styles.rowTitle, action.op === 'delete' && styles.struck]} numberOfLines={1}>
             {title}
@@ -64,9 +67,43 @@ function ActionRow({ action, existing }: { action: PlanAction; existing?: Activi
       {open && action.op !== 'delete' && (
         <View style={styles.details}>
           {action.op === 'update' && <Text style={styles.reason}>Why: {action.reason}</Text>}
-          <WorkoutDetails plan={toWorkoutPlan(action.workout)} color={type?.color ?? Colors.marker} />
+          <WorkoutDetails plan={toWorkoutPlan(action.workout)} color={type?.color ?? Colors.marker} icon={type?.icon} />
         </View>
       )}
+    </Pressable>
+  );
+}
+
+function ReviewLine({ review }: { review: NonNullable<ProposalView['review']> }) {
+  const [open, setOpen] = useState(false);
+  const approved = review.verdict === 'approve';
+  return (
+    <Pressable
+      onPress={() => setOpen((o) => !o)}
+      disabled={review.notes.length === 0}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      style={styles.review}>
+      <View style={styles.reviewHead}>
+        <Ionicons
+          name={approved ? 'shield-checkmark' : 'alert-circle'}
+          size={16}
+          color={approved ? Colors.accent : Colors.chart}
+        />
+        <Text style={styles.reviewTitle}>{approved ? 'Checked by the reviewer' : 'Reviewer still has concerns'}</Text>
+        {review.notes.length > 0 && (
+          <Text style={styles.reviewToggle}>
+            {open ? 'Hide' : `${review.notes.length} note${review.notes.length === 1 ? '' : 's'}`}
+          </Text>
+        )}
+      </View>
+      <Text style={styles.reviewSummary}>{review.summary}</Text>
+      {open &&
+        review.notes.map((note, i) => (
+          <Text key={i} style={styles.reviewNote}>
+            • {note}
+          </Text>
+        ))}
     </Pressable>
   );
 }
@@ -86,6 +123,7 @@ export function ProposalCard({ proposal, activities, disabled, onAccept, onDecli
         <Text style={styles.kicker}>Plan update · {proposal.actions.length} change{proposal.actions.length === 1 ? '' : 's'}</Text>
       </View>
       <Text style={styles.summary}>{proposal.summary}</Text>
+      {proposal.review && <ReviewLine review={proposal.review} />}
 
       <View style={styles.rows}>
         {actions.map((action, i) => (
@@ -152,6 +190,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  review: {
+    gap: 3,
+    padding: 10,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surface,
+  },
+  reviewHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewTitle: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  reviewToggle: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  reviewSummary: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  reviewNote: {
+    color: Colors.textSubtle,
+    fontSize: 12,
+    lineHeight: 17,
+  },
   rows: {
     marginTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -179,10 +249,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  strip: {
-    width: 4,
-    alignSelf: 'stretch',
-    borderRadius: 2,
+  iconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowBody: {
     flex: 1,

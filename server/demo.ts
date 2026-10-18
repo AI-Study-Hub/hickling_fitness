@@ -72,7 +72,7 @@ function enqueueConversation() {
     ]),
     modelResponder(() => {
       return [
-        functionCall('update_athlete_profile', { goal: null, goalDate: null, sports: null, experience: null, currentVolume: null, recentResults: null, thresholdPace: null, lthr: null, maxHr: null, restingHr: null, ftp: null, css: null, availability: '5 days a week', health: null, equipment: null, preferences: null }, { callId: `c${++turn}` }),
+        functionCall('update_athlete_profile', { goal: null, goalDate: null, sports: null, age: null, experience: null, currentVolume: null, recentResults: null, thresholdPace: null, lthr: null, maxHr: null, restingHr: null, ftp: null, css: null, availability: '5 days a week', health: null, equipment: null, preferences: null }, { callId: `c${++turn}` }),
         functionCall('propose_plan_changes', { summary: 'Week 1: two sub-threshold runs, easy ride, strength, long run', actions: weekPlan(today) }, { callId: `c${++turn}` }),
       ];
     }),
@@ -82,7 +82,21 @@ function enqueueConversation() {
 }
 enqueueConversation();
 
-const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRunner(model) });
+// Scripted reviewer: approves with one note, so the card shows what a review looks like.
+const review = async () => ({
+  verdict: 'approve' as const,
+  issues: [
+    {
+      severity: 'minor' as const,
+      session: 'Sun · Long run 80 min',
+      problem: 'About 10% longer than your longest run in the last 30 days',
+      fix: 'Fine as a single step — keep it truly easy and hold this length next week',
+    },
+  ],
+  summary: 'Build week 1 of 3: volume close to recent weeks, two controlled quality days, ~80% easy.',
+});
+
+const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRunner(model), review });
 const app = new Hono();
 app.use('*', cors());
 app.get('/health', (c) => c.json({ ok: true, model: 'demo (scripted)', hasKey: true }));

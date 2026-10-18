@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Colors } from '@/constants/theme';
@@ -9,7 +10,7 @@ import type { Activity } from '@/store/activities';
 /** Fixed so calendar rows have predictable heights (see calendar `getItemLayout`). */
 export const ACTIVITY_CARD_HEIGHT = 46;
 /** Width of a card in the calendar's per-day carousel. */
-export const ACTIVITY_CARD_WIDTH = 186;
+export const ACTIVITY_CARD_WIDTH = 204;
 
 interface Props {
   activity: Activity;
@@ -31,6 +32,7 @@ export function ActivityCard({ activity, onPress, onToggleCompleted, style }: Pr
       accessibilityLabel={`${activity.title}, ${summary}${activity.completed ? ', completed' : ''}`}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed, style]}>
       <View style={[styles.strip, { backgroundColor: accent }]} />
+      <MaterialCommunityIcons name={type?.icon ?? 'help-circle-outline'} size={18} color={accent} style={styles.icon} />
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
           {activity.title}
@@ -70,9 +72,13 @@ const styles = StyleSheet.create({
     width: 5,
     alignSelf: 'stretch',
   },
+  icon: {
+    marginLeft: 8,
+  },
   body: {
     flex: 1,
-    paddingHorizontal: 9,
+    paddingLeft: 7,
+    paddingRight: 9,
     gap: 1,
   },
   title: {

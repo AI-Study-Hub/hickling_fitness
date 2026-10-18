@@ -11,6 +11,7 @@ import { networkInterfaces } from 'node:os';
 
 import { createCoachAgent, createRunner, DEFAULT_MODEL } from './coach/agent';
 import { createCoachHandler } from './coach/handler';
+import { createReviewFn } from './coach/reviewer';
 
 try {
   process.loadEnvFile('.env.local');
@@ -22,7 +23,13 @@ const port = Number(process.env.COACH_PORT ?? 8787);
 const token = process.env.EXPO_PUBLIC_COACH_TOKEN;
 const model = process.env.COACH_MODEL ?? DEFAULT_MODEL;
 
-const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRunner(), token });
+const handler = createCoachHandler({
+  agent: createCoachAgent(),
+  runner: createRunner(),
+  // Every proposal is checked by a second agent against the research rules (COACH_REVIEW=off to skip).
+  review: process.env.COACH_REVIEW === 'off' ? undefined : createReviewFn(createRunner(undefined, 'reviewer')),
+  token,
+});
 
 const app = new Hono();
 app.use('*', cors()); // lets the web preview (localhost:8081) call the coach too

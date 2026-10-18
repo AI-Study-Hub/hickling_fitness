@@ -29,15 +29,22 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 - `src/constants/theme.ts` — colour tokens sampled from Runna screenshots. Use tokens, not raw hex.
 - `docs/research/runna-ux.md` — Runna UX research and the list of ideas not built yet.
 - `docs/research/norwegian-method.md` — the coaching research behind the AI coach (with sources).
+- `docs/research/progression-deload.md` — progression, deload, taper and return-from-break research (with sources).
 
 ## AI coach (Plan tab)
 
 - **Server** (`server/`, Node 22 + Hono + `@openai/agents` 0.20, run with tsx): `server/index.ts` serves
-  `POST /coach/turn` on port 8787; `server/coach/agent.ts` has the single `Coach` agent and its tools
+  `POST /coach/turn` on port 8787; `server/coach/agent.ts` has the `Coach` agent and its tools
   (`get_activities`, `update_athlete_profile`, `offer_choices` — stops the turn, `propose_plan_changes`);
-  `instructions.ts` holds the coaching rules (keep in sync with the Norwegian research doc) plus the
-  per-turn context built from the phone's snapshot; `validate.ts` rejects bad proposals (past dates,
-  completed/unknown ids, steps without duration/distance) and warns on 80/20 violations.
+  `instructions.ts` holds the coaching rules (keep in sync with both research docs) plus the per-turn
+  context built from the phone's snapshot (incl. weekly load from `src/coach/load.ts`); `validate.ts` rejects
+  bad proposals (past dates, completed/unknown ids, steps without duration/distance) and warns on 80/20 and
+  progression problems (weekly jumps, single-session spikes vs the 30-day longest, deload overdue).
+- **Reviewer** (`server/coach/reviewer.ts`, rules in `review-rules.ts`): a second agent with a structured
+  `ReviewSchema` output checks every proposal that passes validation, inside `propose_plan_changes`. Blockers
+  send it back to the coach ("NOT shown"), at most `MAX_REVIEW_ROUNDS` (2) times; after that it's shown with
+  the reviewer's concerns. The verdict/summary/notes travel on the proposal (`review`) and show on the card.
+  A reviewer failure never blocks a proposal. `COACH_REVIEW=off` skips it.
 - **Contract** (`src/coach/contract.ts`, zod) is shared by app and server — relative imports only, no RN
   imports. Tool/proposal schemas use `.nullable()` (OpenAI strict mode). The app sends a snapshot (last
   8 weeks + future activities, profile, today) every turn; the server is stateless. Conversation state is
@@ -50,7 +57,8 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
   (`src/coach/apply.ts`, re-validated against the current calendar; completed sessions and past dates are
   never touched), then tells the coach. Coach sessions have `source: 'coach'` and a `workout`.
 - Secrets live in `.env.local` (git-ignored): `OPENAI_API_KEY`, `EXPO_PUBLIC_COACH_TOKEN` (LAN token, also
-  compiled into the app), `COACH_MODEL`. Never give the OpenAI key an `EXPO_PUBLIC_` prefix.
+  compiled into the app), `COACH_MODEL`, optional `COACH_REVIEW_MODEL` / `COACH_REVIEW_REASONING`
+  (default `medium`). Never give the OpenAI key an `EXPO_PUBLIC_` prefix.
 - Tests use `ScriptedModel` from `@openai/agents/testing` (`server/coach/coach.test.ts`, `@jest-environment
   node`). `npm run coach:demo` serves a scripted coach for UI work without a key — this cloud environment
   can't reach api.openai.com.
