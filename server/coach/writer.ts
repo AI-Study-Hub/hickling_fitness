@@ -39,7 +39,7 @@ export interface WriterInput {
 
 export type WriteFn = (input: WriterInput, signal?: AbortSignal) => Promise<WrittenSession[]>;
 
-const BASE = `
+const ROLE = `
 You write workouts for one athlete. Each session you get has a date, type, intensity, planned time or distance
 and a brief from the head coach. Write the full workout for every numbered session — one entry per session, in
 the same order.
@@ -48,17 +48,20 @@ the same order.
   steps and short execution cues.
 - Use the coach's notes for this athlete's paces, heart rates and power. If a number is unknown, use RPE and
   describe the feel.
-- notes: null unless the athlete must know something extra (kit, fuelling, where).
+- notes: null unless the athlete must know something extra (kit, fuelling, where).`.trim();
 
+/** How a workout is structured — shared with the workout builder (workout-builder.ts). */
+export const WORKOUT_FORMAT = `
 Format
 - blocks: a warm-up block, main-set block(s) with repeat = number of reps (work and recovery steps in the same
   block), a cool-down block. Every step has a duration (durationSec) or a distance (distanceM).
 - Work steps get a target: zone (1 Easy, 2 Steady, 3 Sub-threshold, 4 Hard, 5 Max) plus the most useful of pace,
   heart rate, power and RPE. Label steps briefly ("Sub-threshold rep", "Sled push 2 × 25 m").
-- Title ≤ 30 characters (keep the coach's title unless it's wrong). durationSec and distanceKm on the session are
+- Title ≤ 30 characters (keep the given title unless it's wrong). durationSec and distanceKm on the session are
   the planned totals.`.trim();
 
-const GUIDES: Record<WriterSport, { name: string; guide: string }> = {
+/** Each sport's know-how — shared with the workout builder. */
+export const SPORT_GUIDES: Record<WriterSport, { name: string; guide: string }> = {
   run: {
     name: 'Run writer',
     guide: `
@@ -128,8 +131,8 @@ export function createWriterAgents(): Record<WriterSport, Agent<unknown, typeof 
     WRITER_SPORTS.map((sport) => [
       sport,
       new Agent({
-        name: GUIDES[sport].name,
-        instructions: `${BASE}\n\n${GUIDES[sport].guide.trim()}`,
+        name: SPORT_GUIDES[sport].name,
+        instructions: `${ROLE}\n\n${WORKOUT_FORMAT}\n\n${SPORT_GUIDES[sport].guide.trim()}`,
         outputType: WrittenSessionsSchema,
       }),
     ]),
@@ -157,7 +160,7 @@ ${sessions.map((s, i) => `${i + 1}. ${sessionLine(s)}`).join('\n')}${
 export function createWriteFn(runner: Runner, agents = createWriterAgents()): WriteFn {
   return async (input, signal) => {
     const result = await runner.run(agents[input.sport], buildWriterInput(input), { maxTurns: 2, signal });
-    if (!result.finalOutput) throw new Error(`${GUIDES[input.sport].name} returned nothing`);
+    if (!result.finalOutput) throw new Error(`${SPORT_GUIDES[input.sport].name} returned nothing`);
     return result.finalOutput.sessions;
   };
 }

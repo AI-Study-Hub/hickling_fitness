@@ -12,6 +12,7 @@ import { networkInterfaces } from 'node:os';
 import { createCoachAgent, createRunner, DEFAULT_MODEL } from './coach/agent';
 import { createCoachHandler } from './coach/handler';
 import { createReviewFn } from './coach/reviewer';
+import { createAskFn, createBuildFn, createWorkoutHandlers } from './coach/workout-builder';
 import { createWriteFn } from './coach/writer';
 
 try {
@@ -34,10 +35,16 @@ const handler = createCoachHandler({
   token,
 });
 
+// "Build workout with AI" in the add-session screen: sport-specific questions, then a specialist builds it.
+const writerRunner = createRunner(undefined, 'writer');
+const workout = createWorkoutHandlers({ ask: createAskFn(writerRunner), build: createBuildFn(writerRunner), token });
+
 const app = new Hono();
 app.use('*', cors()); // lets the web preview (localhost:8081) call the coach too
 app.get('/health', (c) => c.json({ ok: true, model, hasKey: Boolean(process.env.OPENAI_API_KEY) }));
 app.post('/coach/turn', (c) => handler(c.req.raw));
+app.post('/workout/questions', (c) => workout.questions(c.req.raw));
+app.post('/workout/build', (c) => workout.build(c.req.raw));
 
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, () => {
   const lan = Object.values(networkInterfaces())

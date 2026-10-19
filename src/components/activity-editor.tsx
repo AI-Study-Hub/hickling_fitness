@@ -6,13 +6,15 @@ import { useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { BuiltWorkout } from '@/coach/contract';
+import { toWorkoutPlan } from '@/coach/apply';
+import { AiWorkoutBuilder } from '@/components/ai-workout-builder';
 import { PillButton } from '@/components/pill-button';
 import { WorkoutDetails } from '@/components/workout-details';
 import { WorkoutTypePicker } from '@/components/workout-type-picker';
 import { Colors, Radius, Type } from '@/constants/theme';
 import { getWorkoutType, type WorkoutType } from '@/data/sports';
 import { addDays, formatLongDate, formatRelativeDate, todayISO, type ISODate } from '@/lib/dates';
-import { splitDuration } from '@/lib/format';
 import { haptics } from '@/lib/haptics';
 import { type Activity, useActivities } from '@/store/activities';
 
@@ -38,17 +40,17 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
   const type = typeId ? getWorkoutType(typeId) : undefined;
   const unit = type?.sport.distanceUnit;
 
-  const initialDuration = splitDuration(activity?.durationSec ?? 0);
+  // Time is entered in minutes for every sport.
+  const initialMinutes = activity?.durationSec ? String(Math.round(activity.durationSec / 60)) : '';
   const [title, setTitle] = useState(activity?.title ?? type?.name ?? '');
   const [date, setDate] = useState(activity?.date ?? defaultDate);
-  const [hours, setHours] = useState(initialDuration.h ? String(initialDuration.h) : '');
-  const [minutes, setMinutes] = useState(initialDuration.m ? String(initialDuration.m) : '');
-  const [seconds, setSeconds] = useState(initialDuration.s ? String(initialDuration.s) : '');
+  const [minutes, setMinutes] = useState(initialMinutes);
   const [distance, setDistance] = useState(() => {
     if (!activity?.distanceKm) return '';
     return unit === 'm' ? String(Math.round(activity.distanceKm * 1000)) : String(activity.distanceKm);
   });
   const [notes, setNotes] = useState(activity?.notes ?? '');
+  const [workout, setWorkout] = useState(activity?.workout);
   const [completed, setCompleted] = useState(activity?.completed ?? defaultDate < today);
 
   const heading = activity ? 'Edit session' : 'Add session';
@@ -62,18 +64,35 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
     if (resolved) setLastSportId(resolved.sport.id);
   };
 
+  const distanceKm = () => {
+    const value = Number(distance || 0);
+    return unit && value > 0 ? (unit === 'm' ? value / 1000 : value) : undefined;
+  };
+
+  /** A workout from the AI builder: fills in whatever the athlete left empty. */
+  const applyBuilt = (built: BuiltWorkout) => {
+    setWorkout(toWorkoutPlan(built.workout));
+    if (!title.trim() || title === type?.name) setTitle(built.title);
+    if (!minutes && built.durationSec) setMinutes(String(Math.round(built.durationSec / 60)));
+    if (unit && !distance && built.distanceKm) {
+      setDistance(unit === 'm' ? String(Math.round(built.distanceKm * 1000)) : String(built.distanceKm));
+    }
+    if (!notes.trim() && built.notes) setNotes(built.notes);
+  };
+
   const save = () => {
     if (!type) return;
-    const durationSec = Number(hours || 0) * 3600 + Number(minutes || 0) * 60 + Number(seconds || 0);
-    const distanceValue = Number(distance || 0);
+    // Keep seconds from a recorded time unless the minutes were changed.
+    const durationSec = activity && minutes === initialMinutes ? activity.durationSec : Number(minutes || 0) * 60;
     const input = {
       workoutTypeId: type.id,
       title: title.trim() || type.name,
       date,
-      durationSec: durationSec > 0 ? durationSec : undefined,
-      distanceKm: unit && distanceValue > 0 ? (unit === 'm' ? distanceValue / 1000 : distanceValue) : undefined,
+      durationSec: durationSec && durationSec > 0 ? durationSec : undefined,
+      distanceKm: distanceKm(),
       notes: notes.trim() || undefined,
       completed,
+      workout,
     };
     if (activity) updateActivity(activity.id, input);
     else addActivity(input);
@@ -145,12 +164,6 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
           )}
         </LinearGradient>
 
-        {activity?.workout && (
-          <Field label="Workout">
-            <WorkoutDetails plan={activity.workout} color={type.color} icon={type.icon} />
-          </Field>
-        )}
-
         <Field label="Title">
           <TextInput
             value={title}
@@ -177,11 +190,9 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
           </View>
         </Field>
 
-        <Field label="Duration">
+        <Field label="Time">
           <View style={styles.inline}>
-            <NumberBox value={hours} onChange={(t) => setHours(digits(t))} suffix="h" />
-            <NumberBox value={minutes} onChange={(t) => setMinutes(digits(t))} suffix="min" />
-            <NumberBox value={seconds} onChange={(t) => setSeconds(digits(t))} suffix="s" />
+            <NumberBox value={minutes} onChange={(t) => setMinutes(digits(t))} suffix="min" wide />
           </View>
         </Field>
 
@@ -198,6 +209,30 @@ export function ActivityEditor({ activity, defaultDate, defaultTypeId }: Props) 
             </View>
           </Field>
         )}
+
+        {workout && (
+          <Field label="Workout">
+            <WorkoutDetails plan={workout} color={type.color} icon={type.icon} />
+            <Pressable onPress={() => setWorkout(undefined)} hitSlop={8} accessibilityRole="button" style={styles.removeWorkout}>
+              <Text style={styles.removeText}>Remove workout</Text>
+            </Pressable>
+          </Field>
+        )}
+
+        <AiWorkoutBuilder
+          workoutTypeId={type.id}
+          sportName={type.sport.name}
+          date={date}
+          title={title}
+          durationMin={Number(minutes) || undefined}
+          distanceKm={distanceKm()}
+          notes={notes}
+          color={type.color}
+          icon={type.icon}
+          distanceUnit={unit}
+          hasWorkout={!!workout}
+          onUse={applyBuilt}
+        />
 
         <Field label="Notes">
           <TextInput
@@ -437,6 +472,15 @@ const styles = StyleSheet.create({
   },
   save: {
     marginTop: 8,
+  },
+  removeWorkout: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  removeText: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
   },
   delete: {
     alignItems: 'center',

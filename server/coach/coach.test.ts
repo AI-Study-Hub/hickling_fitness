@@ -10,6 +10,7 @@ import { buildInstructions } from './instructions';
 import { buildReviewInput, createReviewFn, type ReviewFn } from './reviewer';
 import { validateActions } from './validate';
 import { writerJobs } from './write-plan';
+import { createAskFn, createBuildFn, createWorkoutHandlers, workoutBrief } from './workout-builder';
 import { buildWriterInput, createWriteFn, type WriteFn } from './writer';
 
 const snapshot: Snapshot = {
@@ -583,3 +584,64 @@ describe('session writers', () => {
     expect(JSON.stringify(model.calls[0].request)).toMatch(/You are the swimming specialist/);
   });
 });
+
+describe('workout builder', () => {
+  const request = {
+    workoutTypeId: 'run.intervals',
+    date: '2026-10-21',
+    title: null,
+    durationMin: 60,
+    distanceKm: null,
+    notes: 'Track available',
+    answers: [{ question: 'What is this run for?', answer: 'Sub-threshold' }],
+    profile: { thresholdPace: '4:10 /km', lthr: 172 },
+  };
+  const built = { title: '5 × 6 min sub-T', durationSec: 3600, distanceKm: null, notes: null, workout: workout('moderate') };
+  const post = (handler: (req: Request) => Promise<Response>, body: object, token = 'secret') =>
+    handler(
+      new Request('http://coach/workout', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  it('serves questions and workouts, with auth and validation', async () => {
+    const ask = jest.fn(async () => [{ question: 'Pace or heart rate?', options: ['Pace', 'HR'], multiSelect: false }]);
+    const handlers = createWorkoutHandlers({ ask, build: async () => built, token: 'secret' });
+
+    expect((await post(handlers.questions, request, 'wrong')).status).toBe(401);
+    expect((await post(handlers.questions, { ...request, workoutTypeId: 'run.nope' })).status).toBe(400);
+    expect(await (await post(handlers.questions, request)).json()).toEqual({ questions: [expect.objectContaining({ question: 'Pace or heart rate?' })] });
+    expect(await (await post(handlers.build, request)).json()).toEqual({ workout: built });
+
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const failing = createWorkoutHandlers({ ask, build: async () => Promise.reject(new Error('overloaded')) });
+    const res = await post(failing.build, request);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'overloaded' });
+  });
+
+  it('tells the agents everything about the session, the athlete and any change', () => {
+    const text = workoutBrief({ ...request, current: built, change: 'Longer reps' });
+    expect(text).toMatch(/Session: Run · Intervals \(run.intervals\) on Wednesday 21 October/);
+    expect(text).toMatch(/Planned: 60 min/);
+    expect(text).toMatch(/Notes: Track available/);
+    expect(text).toMatch(/- thresholdPace: 4:10 \/km/);
+    expect(text).toMatch(/- What is this run for\? → Sub-threshold/);
+    expect(text).toMatch(/## Change they asked for\nLonger reps/);
+  });
+
+  it('asks with the questions agent and builds with the sport specialist, fixing steps without amounts', async () => {
+    const questions = [{ question: 'Pool length?', options: ['25 m', '50 m'], multiSelect: false }];
+    const askModel = new ScriptedModel([[assistantMessage(JSON.stringify({ questions }))]]);
+    await expect(createAskFn(createRunner(askModel, 'writer'))({ ...request, workoutTypeId: 'swim.endurance' })).resolves.toEqual(questions);
+
+    const broken = { ...built, workout: { ...built.workout, blocks: [{ repeat: 1, steps: [{ ...step('work', 600, 2), durationSec: null }] }] } };
+    const model = new ScriptedModel([[assistantMessage(JSON.stringify(broken))], [assistantMessage(JSON.stringify(built))]]);
+    await expect(createBuildFn(createRunner(model, 'writer'))({ ...request, workoutTypeId: 'swim.endurance' })).resolves.toEqual(built);
+    expect(JSON.stringify(model.calls[0].request)).toMatch(/You are the swimming specialist/);
+    expect(JSON.stringify(model.calls[1].request.input)).toMatch(/1 step\(s\) have no duration or distance/);
+  });
+});
+

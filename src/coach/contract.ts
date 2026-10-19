@@ -166,6 +166,42 @@ export const AthleteProfileSchema = z.object({
 export type AthleteProfile = z.infer<typeof AthleteProfileSchema>;
 export type AthleteProfilePatch = Partial<AthleteProfile>;
 
+// ── Workout builder: AI help when adding a session ──────────────────────────────────────────────────
+
+export const WorkoutQuestionSchema = z.object({
+  question: z.string(),
+  options: z.array(z.string().max(40)).max(6).describe('2–5 short tappable answers; the athlete can also type their own'),
+  multiSelect: z.boolean(),
+});
+export type WorkoutQuestion = z.infer<typeof WorkoutQuestionSchema>;
+
+export const WorkoutQuestionsSchema = z.object({ questions: z.array(WorkoutQuestionSchema).max(4) });
+
+export const BuiltWorkoutSchema = z.object({
+  title: z.string().min(1).max(60),
+  durationSec: z.number().int().positive().nullable().describe('Planned total'),
+  distanceKm: z.number().positive().nullable().describe('Planned total, km'),
+  notes: z.string().nullable(),
+  workout: WorkoutPlanSchema,
+});
+export type BuiltWorkout = z.infer<typeof BuiltWorkoutSchema>;
+
+/** Sent to `/workout/questions` and `/workout/build`. Stateless: the app sends everything each time. */
+export const WorkoutRequestSchema = z.object({
+  workoutTypeId: z.enum(WORKOUT_TYPE_IDS),
+  date: IsoDate,
+  title: z.string().max(60).nullish(),
+  durationMin: z.number().positive().nullish(),
+  distanceKm: z.number().positive().nullish(),
+  notes: z.string().max(2000).nullish(),
+  answers: z.array(z.object({ question: z.string().max(300), answer: z.string().max(500) })).max(10),
+  profile: AthleteProfileSchema.partial(),
+  /** For a change: the workout so far and what to change. */
+  current: BuiltWorkoutSchema.nullish(),
+  change: z.string().max(1000).nullish(),
+});
+export type WorkoutRequest = z.infer<typeof WorkoutRequestSchema>;
+
 // ── Request / response ──────────────────────────────────────────────────────────────────────────────
 
 /** The app stores workouts with optional fields; the coach only needs the gist back. */

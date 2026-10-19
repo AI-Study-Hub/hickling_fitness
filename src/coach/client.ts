@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { fetch as expoFetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 
-import type { StreamLine, TurnRequest } from './contract';
+import type { BuiltWorkout, StreamLine, TurnRequest, WorkoutQuestion, WorkoutRequest } from './contract';
 
 const PORT = 8787;
 
@@ -20,6 +20,9 @@ export function coachBaseUrl(): string | null {
 
 export class CoachUnavailableError extends Error {}
 
+const authHeaders = (): Record<string, string> =>
+  process.env.EXPO_PUBLIC_COACH_TOKEN ? { authorization: `Bearer ${process.env.EXPO_PUBLIC_COACH_TOKEN}` } : {};
+
 /** Sends one turn and calls `onLine` for each streamed NDJSON line. */
 export async function sendTurn(
   request: TurnRequest,
@@ -33,10 +36,7 @@ export async function sendTurn(
   try {
     res = (await expoFetch(`${base}/coach/turn`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(process.env.EXPO_PUBLIC_COACH_TOKEN ? { authorization: `Bearer ${process.env.EXPO_PUBLIC_COACH_TOKEN}` } : {}),
-      },
+      headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify(request),
       signal,
     })) as unknown as Response;
@@ -69,3 +69,36 @@ export async function sendTurn(
   buffer += decoder.decode();
   flush(true);
 }
+
+/** POSTs JSON to the coach server and returns the parsed reply (non-streaming endpoints). */
+async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const base = coachBaseUrl();
+  if (!base) throw new CoachUnavailableError("Can't work out where the coach server is.");
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new CoachUnavailableError(`Couldn't reach the coach at ${base} — is \`npm run dev\` running?`);
+  }
+  if (res.status === 401) throw new CoachUnavailableError('The coach rejected the app token — rerun `npm run coach:setup` and restart.');
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Coach error ${res.status}`);
+  return data;
+}
+
+/** "Build workout with AI", step 1: the questions worth asking for this session. */
+export async function askWorkoutQuestions(request: WorkoutRequest, signal?: AbortSignal): Promise<WorkoutQuestion[]> {
+  return (await postJson<{ questions: WorkoutQuestion[] }>('/workout/questions', request, signal)).questions;
+}
+
+/** Step 2 (and any change after): the full workout. */
+export async function buildWorkout(request: WorkoutRequest, signal?: AbortSignal): Promise<BuiltWorkout> {
+  return (await postJson<{ workout: BuiltWorkout }>('/workout/build', request, signal)).workout;
+}
+

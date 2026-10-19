@@ -55,6 +55,12 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
     duration/distance) and gives advisory 80/20 and progression warnings (also run on outlines for the
     reviewer). Per-turn state lives in `context.ts`; `instructions.ts` holds the coaching rules (keep in sync
     with both research docs) and the per-turn context (incl. weekly load from `src/coach/load.ts`).
+- **Build workout with AI** (add/edit session sheet, `src/components/ai-workout-builder.tsx`):
+  `POST /workout/questions` then `POST /workout/build` (`server/coach/workout-builder.ts`, stateless,
+  `WorkoutRequest` in the contract). A questions agent asks up to 4 sport-specific questions; the sport's
+  builder (same `SPORT_GUIDES` / `WORKOUT_FORMAT` as the plan writers, plus `web_search`) writes the workout
+  to the given minutes/distance and the athlete's details; changes resend the current workout + a request.
+  The workout is stored on the session (`Activity.workout`). Time is entered in minutes for every sport.
 - Keep the prompts permissive: limits are sanity checks (60 actions per `propose_plan_changes`, 200 sessions
   per outline, a year ahead), checks are advice, and the coach must act in the same reply rather than promise to.
 - **Contract** (`src/coach/contract.ts`, zod) is shared by app and server — relative imports only, no RN

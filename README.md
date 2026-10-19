@@ -83,6 +83,10 @@ How the coach plans: it's a small team.
 4. Then specialist writers (run, ride, swim, strength, Hyrox) write every workout in parallel and the sessions
    go into your calendar.
 
+**Build workout with AI**: when you add a session, enter the time and/or distance and tap *Build workout
+with AI*. It asks a few questions for that sport, then writes the full workout (it can search the web). Ask for
+changes, then *Use this workout* — it's saved with the session. Needs `npm run dev` running, like the coach.
+
 If the Plan tab says it can't reach the coach: check `npm run dev` is running, the phone is on the same
 Wi-Fi as the Mac, and allow incoming connections for `node` if macOS asks. `npm run coach:demo` runs a
 scripted coach (no OpenAI) for testing the screen.

@@ -13,11 +13,12 @@ import { assistantMessage, functionCall, modelResponder, ScriptedModel } from '@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
-import type { SessionBrief, StructureReview, WeekBrief } from '../src/coach/contract';
+import type { BuiltWorkout, SessionBrief, StructureReview, WeekBrief, WorkoutQuestion } from '../src/coach/contract';
 import { addDays, startOfWeek } from '../src/lib/dates';
 import { createCoachAgent, createRunner } from './coach/agent';
 import { createCoachHandler } from './coach/handler';
 import type { ReviewFn } from './coach/reviewer';
+import { createWorkoutHandlers, type AskFn, type BuildFn } from './coach/workout-builder';
 import type { WriteFn, WrittenSession } from './coach/writer';
 
 const step = (kind: string, durationSec: number, zone?: number, extra: Record<string, unknown> = {}) => ({
@@ -115,6 +116,49 @@ const write: WriteFn = async ({ sessions }) => {
   });
 };
 
+/** Scripted "Build workout with AI": two sport-flavoured questions, then a workout that fits the time given. */
+const QUESTIONS: Record<string, WorkoutQuestion[]> = {
+  run: [
+    { question: 'What is this run for?', options: ['Easy aerobic', 'Sub-threshold', 'VO2 max', 'Hills'], multiSelect: false },
+    { question: 'How do you want to pace it?', options: ['Pace', 'Heart rate', 'Feel'], multiSelect: false },
+  ],
+  swim: [
+    { question: 'Where are you swimming?', options: ['25 m pool', '50 m pool', 'Open water'], multiSelect: false },
+    { question: 'What kit do you have?', options: ['Pull buoy', 'Paddles', 'Fins', 'None'], multiSelect: true },
+  ],
+};
+const ask: AskFn = async ({ workoutTypeId }) => {
+  await new Promise((r) => setTimeout(r, 300));
+  return QUESTIONS[workoutTypeId.split('.')[0]] ?? [
+    { question: 'What should this session focus on?', options: ['Endurance', 'Strength', 'Speed'], multiSelect: false },
+  ];
+};
+const buildDemo: BuildFn = async ({ workoutTypeId, durationMin, answers, change, title }) => {
+  await new Promise((r) => setTimeout(r, 500));
+  const total = (durationMin ?? 50) * 60;
+  const hard = answers.some((a) => /threshold|VO2|Hills/i.test(a.answer));
+  const reps = change && /more|longer/i.test(change) ? 6 : 5;
+  const built: BuiltWorkout = {
+    title: title ?? (hard ? `${reps} × 6 min sub-T` : 'Easy aerobic'),
+    durationSec: total,
+    distanceKm: null,
+    notes: workoutTypeId.startsWith('run') ? 'Flat route if you can — pace is easier to hold.' : null,
+    workout: {
+      summary: hard ? 'Controlled sub-threshold reps — finish with one more in the tank.' : 'Conversational the whole way.',
+      intensity: hard ? 'moderate' : 'easy',
+      blocks: hard
+        ? [
+            { repeat: 1, steps: [step('warmup', 900, 1)] },
+            { repeat: reps, steps: [step('work', 360, 3, { pace: '4:15–4:20 /km', heartRate: '≤ 168 bpm', rpe: 6 }), step('recovery', 75, 1)] },
+            { repeat: 1, steps: [step('cooldown', Math.max(300, total - 900 - reps * 435), 1)] },
+          ]
+        : [{ repeat: 1, steps: [step('work', total, 2, { heartRate: '< 145 bpm', rpe: 3 })] }],
+    },
+  };
+  return built;
+};
+const workoutDemo = createWorkoutHandlers({ ask, build: buildDemo });
+
 let turn = 0;
 let today = '2026-10-18'; // updated from each request's snapshot
 const model = new ScriptedModel();
@@ -138,6 +182,8 @@ const handler = createCoachHandler({ agent: createCoachAgent(), runner: createRu
 const app = new Hono();
 app.use('*', cors());
 app.get('/health', (c) => c.json({ ok: true, model: 'demo (scripted)', hasKey: true }));
+app.post('/workout/questions', (c) => workoutDemo.questions(c.req.raw));
+app.post('/workout/build', (c) => workoutDemo.build(c.req.raw));
 app.post('/coach/turn', async (c) => {
   if (model.remainingSteps === 0) enqueueConversation();
   const body = (await c.req.raw.clone().json().catch(() => null)) as { snapshot?: { today?: string } } | null;
