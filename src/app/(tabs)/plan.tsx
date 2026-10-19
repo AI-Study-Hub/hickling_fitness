@@ -23,7 +23,7 @@ function Intro({ onPick }: { onPick: (text: string) => void }) {
   return (
     <View style={styles.intro}>
       <View style={styles.badge}>
-        <Text style={styles.badgeGlyph}>h.</Text>
+        <Text style={styles.badgeGlyph}>i.</Text>
       </View>
       <Text style={styles.introTitle}>Your coach</Text>
       <Text style={styles.introText}>
@@ -222,12 +222,14 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     backgroundColor: Colors.brand,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ rotate: '-8deg' }],
   },
   badgeGlyph: {
-    color: '#1B1416',
+    color: Colors.accent,
     fontSize: 24,
     fontWeight: '900',
     fontStyle: 'italic',

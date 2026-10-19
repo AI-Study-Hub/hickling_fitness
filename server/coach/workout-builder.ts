@@ -24,7 +24,7 @@ export type AskFn = (request: WorkoutRequest, signal?: AbortSignal) => Promise<W
 export type BuildFn = (request: WorkoutRequest, signal?: AbortSignal) => Promise<BuiltWorkout>;
 
 const ASK_RULES = `
-You help an athlete design one training session in the Hickling app. They've picked the session type and may
+You help an athlete design one training session in the Intense app. They've picked the session type and may
 have given a time, distance and notes. Ask the questions that matter most for building this workout — at most
 4, most important first, fewer if you can (none if you already have enough). Each question has 2–5 short
 tappable answers (they can also type their own); multiSelect only when several answers go together.
@@ -42,7 +42,7 @@ Useful topics by sport:
 Write in British English, short and friendly.`.trim();
 
 const BUILD_ROLE = `
-You build one workout with the athlete, in the Hickling app. Use what they gave you — type, time and/or
+You build one workout with the athlete, in the Intense app. Use what they gave you — type, time and/or
 distance, notes, their answers and their details — and write the full session:
 - Fit the time and/or distance they gave (within ~5%); if they gave neither, pick a sensible length.
 - Personalise targets from their details (threshold pace, heart rates, FTP, CSS). If a number is unknown, use

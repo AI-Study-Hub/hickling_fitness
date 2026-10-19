@@ -1,7 +1,7 @@
-# hickling_fitness
+# Intense
 
-A personal multi-sport training app for iPhone, modelled on Runna's UI/UX but for running, cycling,
-swimming, strength and Hyrox.
+A personal multi-sport training app for iPhone — matte black, minimal, modelled on Runna's flow but for
+running, cycling, swimming, strength and Hyrox. (Repo: `hickling_fitness`.)
 
 Built with Expo (React Native + TypeScript). Data is stored on the phone for now.
 

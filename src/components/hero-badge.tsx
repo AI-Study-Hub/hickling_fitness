@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import Svg, { Polygon } from 'react-native-svg';
 
+import { BrandRings, Colors } from '@/constants/theme';
+
 const SIZE = 132;
-// Outer → inner rings, sampled from the reference screenshot.
+// Outer → inner rings of the Intense mark: matte black to blue.
 const RINGS = [
-  { scale: 1, color: '#744C47', pulse: 0.07 },
-  { scale: 0.76, color: '#9C5950', pulse: 0.05 },
-  { scale: 0.54, color: '#B96256', pulse: 0.03 },
-  { scale: 0.36, color: '#C36658', pulse: 0 },
+  { scale: 1, color: BrandRings[0], pulse: 0.07 },
+  { scale: 0.76, color: BrandRings[1], pulse: 0.05 },
+  { scale: 0.54, color: BrandRings[2], pulse: 0.03 },
+  { scale: 0.36, color: BrandRings[3], pulse: 0 },
 ];
 
 function octagonPoints(size: number, inset: number): string {
@@ -52,7 +54,7 @@ export function HeroBadge() {
           </Animated.View>
         );
       })}
-      <Text style={styles.glyph}>h.</Text>
+      <Text style={styles.glyph}>i.</Text>
     </View>
   );
 }
@@ -65,7 +67,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   glyph: {
-    color: '#1B1416',
+    color: Colors.background,
     fontSize: 28,
     fontWeight: '900',
     fontStyle: 'italic',

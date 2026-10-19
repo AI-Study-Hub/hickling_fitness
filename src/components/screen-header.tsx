@@ -2,13 +2,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Type } from '@/constants/theme';
+import { BrandRings, Colors, Type } from '@/constants/theme';
 import { Profile } from '@/constants/profile';
 
 export function Avatar({ size = 40 }: { size?: number }) {
   return (
     <LinearGradient
-      colors={[Colors.brand, '#7A3E4F']}
+      colors={[BrandRings[2], Colors.brand]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
@@ -18,7 +18,11 @@ export function Avatar({ size = 40 }: { size?: number }) {
 }
 
 export function Wordmark() {
-  return <Text style={styles.wordmark}>hickling</Text>;
+  return (
+    <Text style={styles.wordmark} accessibilityLabel="Intense">
+      INTENSE<Text style={styles.wordmarkDot}>.</Text>
+    </Text>
+  );
 }
 
 /** Avatar on the left, title in the centre, action icons on the right. */
@@ -64,7 +68,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   avatarText: {
     color: Colors.text,
@@ -72,8 +76,12 @@ const styles = StyleSheet.create({
   },
   wordmark: {
     color: Colors.text,
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -1,
+    fontSize: 21,
+    fontWeight: '900',
+    letterSpacing: 5,
+  },
+  wordmarkDot: {
+    color: Colors.accent,
+    letterSpacing: 0,
   },
 });

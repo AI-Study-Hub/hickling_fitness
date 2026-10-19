@@ -1,43 +1,46 @@
 /**
- * Design tokens. The app is dark-only, modelled on Runna's dark UI.
- * Colours were sampled from reference screenshots — keep new UI on these tokens
- * rather than hard-coding hex values in components.
+ * Design tokens for Intense: matte black with a cool blue cast, minimal and modern. Dark-only. Keep new UI on
+ * these tokens rather than hard-coding hex values in components. Sport colours live in `src/data/sports.ts`.
  */
 
 export const Colors = {
-  // Surfaces
-  background: '#141518',
-  backgroundAlt: '#181B21',
-  header: '#252A34',
-  surface: '#252A34',
-  surfacePressed: '#2E3440',
-  surfaceBorder: '#3A404C',
-  separator: '#3E434C',
-  tabBar: '#141414',
-  /** Rows of weeks that have already finished, like Runna's tinted past weeks. */
-  pastWeek: '#1D2129',
+  // Surfaces — matte blacks with a slight blue tint
+  background: '#0B0D11',
+  backgroundAlt: '#101319',
+  header: '#161A22',
+  surface: '#161A22',
+  surfacePressed: '#1E232D',
+  surfaceBorder: '#272E3A',
+  separator: '#232A35',
+  tabBar: '#090B0E',
+  /** Rows of weeks that have already finished. */
+  pastWeek: '#12161D',
 
-  // Text
-  text: '#ECEEF6',
-  textMuted: '#9FA5B7',
-  textSubtle: '#6E7A8F',
-  textOnLight: '#14161B',
+  // Text — cool whites and greys
+  text: '#E9EDF5',
+  textMuted: '#98A2B5',
+  textSubtle: '#626D81',
+  textOnLight: '#0B0D11',
 
   // Accents
-  light: '#E4EAF1',
-  accent: '#2DD4B0',
-  brand: '#C8675A',
+  light: '#E6ECF6',
+  accent: '#5AA8FF',
+  /** Brand surface: the avatar, the coach badge. */
+  brand: '#1F2836',
   /** Progress chart line — Strava-style orange. */
   chart: '#FC5A1E',
   danger: '#F2555A',
-  marker: '#8E9296',
-  handle: '#4A5566',
-  tabActive: '#EFF1F5',
-  tabInactive: '#6C7B8F',
+  marker: '#7B8597',
+  handle: '#3A4454',
+  tabActive: '#E9EDF5',
+  tabInactive: '#5A6578',
 } as const;
 
-/** Background gradient behind the Today screen body (top → bottom). */
-export const TodayGradient = ['#434041', '#2E2F32', '#1E2126', '#181B21'] as const;
+/** The Intense mark: concentric octagons from matte black to blue (outer → inner). */
+export const BrandRings = ['#161C27', '#1F2B3E', '#2A4166', '#4A86E8'] as const;
+
+/** Background gradient behind the Today screen body (top → bottom): a blue haze fading to matte black. */
+export const TodayGradient = ['#1C2432', '#141922', '#0E1116', '#0B0D11'] as const;
 
 export const Spacing = {
   xs: 4,

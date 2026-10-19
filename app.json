@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "Hickling",
+    "name": "Intense",
     "slug": "hickling-fitness",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "hickling",
+    "scheme": "intense",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#141518",
+    "backgroundColor": "#0B0D11",
     "platforms": ["ios", "web"],
     "ios": {
       "bundleIdentifier": "com.aistudyhub.hicklingfitness",
@@ -22,7 +22,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#141518",
+          "backgroundColor": "#0B0D11",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 120
         }

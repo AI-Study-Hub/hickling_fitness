@@ -101,9 +101,9 @@ type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
 type Role = 'coach' | 'writer' | 'reviewer';
 
 const ROLE_ENV: Record<Role, { model: string; reasoning: string; effort: Effort; workflow: string }> = {
-  coach: { model: 'COACH_MODEL', reasoning: 'COACH_REASONING', effort: 'low', workflow: 'Hickling coach' },
-  writer: { model: 'COACH_WRITER_MODEL', reasoning: 'COACH_WRITER_REASONING', effort: 'low', workflow: 'Hickling coach · writer' },
-  reviewer: { model: 'COACH_REVIEW_MODEL', reasoning: 'COACH_REVIEW_REASONING', effort: 'medium', workflow: 'Hickling coach · review' },
+  coach: { model: 'COACH_MODEL', reasoning: 'COACH_REASONING', effort: 'low', workflow: 'Intense coach' },
+  writer: { model: 'COACH_WRITER_MODEL', reasoning: 'COACH_WRITER_REASONING', effort: 'low', workflow: 'Intense coach · writer' },
+  reviewer: { model: 'COACH_REVIEW_MODEL', reasoning: 'COACH_REVIEW_REASONING', effort: 'medium', workflow: 'Intense coach · review' },
 };
 
 /**

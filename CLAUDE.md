@@ -1,8 +1,10 @@
 @AGENTS.md
 
-# Hickling Fitness — project notes
+# Intense — project notes
 
-Personal iOS app (single user, Ewan) that copies Runna's look and flow but supports every sport.
+Personal iOS app (single user, Ewan) that copies Runna's flow but supports every sport. Brand: **Intense** —
+matte black with a cool blue cast, minimal (tokens and the `BrandRings` mark in `src/constants/theme.ts`).
+The repo is still `hickling_fitness`, and storage keys stay `hickling.*` (renaming them would lose saved data).
 Expo SDK 57 · React Native 0.86 · Expo Router · TypeScript · Zustand. Dark theme only.
 
 **SDK version is pinned to what the App Store's Expo Go supports.** SDK 58 shipped 15 Oct 2026 but its
@@ -26,7 +28,7 @@ drops SDK 57, so upgrade promptly when it lands. SDK 58 changed the custom tab b
 - `src/store/activities.ts` — Zustand store persisted to AsyncStorage (`hickling.activities`).
   Activity dates are local `YYYY-MM-DD` strings; distance is stored in km.
 - `src/lib/dates.ts` — week maths (weeks start Monday), labels. `src/lib/format.ts` — durations/distances.
-- `src/constants/theme.ts` — colour tokens sampled from Runna screenshots. Use tokens, not raw hex.
+- `src/constants/theme.ts` — Intense colour tokens (matte black + blue accent). Use tokens, not raw hex.
 - `docs/research/runna-ux.md` — Runna UX research and the list of ideas not built yet.
 - `docs/research/norwegian-method.md` — the coaching research behind the AI coach (with sources).
 - `docs/research/progression-deload.md` — progression, deload, taper and return-from-break research (with sources).

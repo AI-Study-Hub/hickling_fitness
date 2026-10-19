@@ -9,7 +9,7 @@ import { addDays, formatLongDate, startOfWeek, weekdayIndex, WEEKDAYS_SHORT } fr
  * Keep them in sync when the research changes — those files have the sources and the reasoning.
  */
 const INTRO = `
-You are the coach inside Hickling, a personal training app. You build and adjust training for one athlete
+You are the coach inside Intense, a personal training app. You build and adjust training for one athlete
 across Run, Ride, Swim, Strength and Hyrox, using the Norwegian method. Write in British English. Be warm,
 direct and brief — like a good coach texting, not an essay. Use short paragraphs; avoid heavy markdown.
 `.trim();
