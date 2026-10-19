@@ -74,40 +74,6 @@ function ActionRow({ action, existing }: { action: PlanAction; existing?: Activi
   );
 }
 
-function ReviewLine({ review }: { review: NonNullable<ProposalView['review']> }) {
-  const [open, setOpen] = useState(false);
-  const approved = review.verdict === 'approve';
-  return (
-    <Pressable
-      onPress={() => setOpen((o) => !o)}
-      disabled={review.notes.length === 0}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
-      style={styles.review}>
-      <View style={styles.reviewHead}>
-        <Ionicons
-          name={approved ? 'shield-checkmark' : 'alert-circle'}
-          size={16}
-          color={approved ? Colors.accent : Colors.chart}
-        />
-        <Text style={styles.reviewTitle}>{approved ? 'Checked by the reviewer' : 'Reviewer still has concerns'}</Text>
-        {review.notes.length > 0 && (
-          <Text style={styles.reviewToggle}>
-            {open ? 'Hide' : `${review.notes.length} note${review.notes.length === 1 ? '' : 's'}`}
-          </Text>
-        )}
-      </View>
-      <Text style={styles.reviewSummary}>{review.summary}</Text>
-      {open &&
-        review.notes.map((note, i) => (
-          <Text key={i} style={styles.reviewNote}>
-            • {note}
-          </Text>
-        ))}
-    </Pressable>
-  );
-}
-
 interface Row {
   action: PlanAction;
   date: string;
@@ -115,10 +81,9 @@ interface Row {
 }
 
 /** One week of a multi-week plan: a tappable header with the week's label and totals, rows when open. */
-function WeekSection({ number, weekStart, label, rows, initiallyOpen }: {
+function WeekSection({ number, weekStart, rows, initiallyOpen }: {
   number: number;
   weekStart: string;
-  label?: string;
   rows: Row[];
   initiallyOpen: boolean;
 }) {
@@ -140,10 +105,7 @@ function WeekSection({ number, weekStart, label, rows, initiallyOpen }: {
         accessibilityState={{ expanded: open }}
         style={styles.weekHead}>
         <View style={styles.rowBody}>
-          <Text style={styles.weekTitle}>
-            Week {number}
-            {label ? <Text style={styles.weekLabel}> · {label}</Text> : null}
-          </Text>
+          <Text style={styles.weekTitle}>Week {number}</Text>
           <Text style={styles.rowMeta}>{meta}</Text>
         </View>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textSubtle} />
@@ -165,7 +127,6 @@ export function ProposalCard({ proposal, activities, disabled, onAccept, onDecli
     })
     .sort((a, b) => a.date.localeCompare(b.date));
   const weeks = [...new Set(rows.map((r) => (r.date ? startOfWeek(r.date) : '')))];
-  const labels = new Map((proposal.weeks ?? []).map((w) => [w.weekStart, w.label]));
   const count = proposal.actions.length;
 
   return (
@@ -177,7 +138,6 @@ export function ProposalCard({ proposal, activities, disabled, onAccept, onDecli
         </Text>
       </View>
       <Text style={styles.summary}>{proposal.summary}</Text>
-      {proposal.review && <ReviewLine review={proposal.review} />}
 
       <View style={styles.rows}>
         {weeks.length > 1
@@ -186,7 +146,6 @@ export function ProposalCard({ proposal, activities, disabled, onAccept, onDecli
                 key={week}
                 number={i + 1}
                 weekStart={week}
-                label={labels.get(week)}
                 rows={rows.filter((r) => (r.date ? startOfWeek(r.date) : '') === week)}
                 initiallyOpen={i === 0}
               />
@@ -253,38 +212,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  review: {
-    gap: 3,
-    padding: 10,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surface,
-  },
-  reviewHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  reviewTitle: {
-    flex: 1,
-    color: Colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  reviewToggle: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  reviewSummary: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  reviewNote: {
-    color: Colors.textSubtle,
-    fontSize: 12,
-    lineHeight: 17,
-  },
   rows: {
     marginTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -310,10 +237,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 14,
     fontWeight: '700',
-  },
-  weekLabel: {
-    color: Colors.accent,
-    fontWeight: '600',
   },
   dateCol: {
     width: 32,

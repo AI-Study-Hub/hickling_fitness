@@ -69,6 +69,13 @@ export function formatWeekRange(weekStart: ISODate): string {
   return `${MONTHS_SHORT[start.getMonth()]} ${start.getDate()} - ${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}`;
 }
 
+/** "Tue 21 Oct" */
+export function formatShortDate(iso: ISODate): string {
+  const date = parseISODate(iso);
+  const day = WEEKDAYS_LONG[weekdayIndex(iso)].slice(0, 3);
+  return `${day} ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
+}
+
 /** "Sunday 18 October" */
 export function formatLongDate(iso: ISODate): string {
   const date = parseISODate(iso);

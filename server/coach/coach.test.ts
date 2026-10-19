@@ -1,14 +1,16 @@
 /** @jest-environment node */
 import { assistantMessage, functionCall, ScriptedModel } from '@openai/agents/testing';
 
-import type { PlanAction, Review, Snapshot, StreamLine } from '../../src/coach/contract';
+import type { PlanOutline, Snapshot, StreamLine, StructureReview, WeekBrief, PlanAction } from '../../src/coach/contract';
+import { makeOutline } from '../../src/coach/outline';
 import { addDays } from '../../src/lib/dates';
 import { createCoachAgent, createRunner } from './agent';
-import { buildReviewInput, createReviewFn, type ReviewFn } from './reviewer';
-import { buildWriterInput, createWriteFn, type WeekBrief, type WriteFn } from './writer';
 import { createCoachHandler, danglingCallId, eventToInput, joinAfterTool } from './handler';
 import { buildInstructions } from './instructions';
+import { buildReviewInput, createReviewFn, type ReviewFn } from './reviewer';
 import { validateActions } from './validate';
+import { writerJobs } from './write-plan';
+import { buildWriterInput, createWriteFn, type WriteFn } from './writer';
 
 const snapshot: Snapshot = {
   today: '2026-10-18',
@@ -183,6 +185,13 @@ describe('danglingCallId', () => {
 });
 
 describe('eventToInput', () => {
+  it('describes outline decisions for the model', () => {
+    expect(eventToInput({ kind: 'outline_decision', outlineId: 'o_1', decision: 'approved' }, 42)).toMatch(
+      /APPROVED outline o_1\. The writers wrote 42 sessions/,
+    );
+    expect(eventToInput({ kind: 'outline_decision', outlineId: 'o_1', decision: 'declined' })).toMatch(/DECLINED outline o_1/);
+  });
+
   it('describes proposal decisions for the model', () => {
     expect(eventToInput({ kind: 'proposal_decision', proposalId: 'p1', decision: 'accepted', applied: 5 })).toMatch(
       /ACCEPTED proposal p1; 5 change/,
@@ -320,204 +329,257 @@ function nulls() {
   };
 }
 
-// ── build_plan: programme → parallel session writers → reviewer → one card ─────────────────────────
+// ── Plans: build_plan → reviewer edits → outline card → approval → specialist writers ──────────────
 
-const brief = (date: string, intensity: 'easy' | 'moderate' = 'easy') => ({
+const brief = (date: string, workoutTypeId = 'run.easy', intensity: 'easy' | 'moderate' = 'easy') => ({
   date,
-  workoutTypeId: intensity === 'easy' ? 'run.easy' : 'run.intervals',
+  workoutTypeId,
   title: intensity === 'easy' ? 'Easy 45' : '6 × 3 min sub-T',
   intensity,
   durationMin: 45,
   distanceKm: null,
   brief: intensity === 'easy' ? 'Easy 45 min, HR < 145' : '6 × 3 min @ 4:15 /km, 60 s jog',
 });
-const week = (weekStart: string, label: string, days = [1, 3, 5]): WeekBrief => ({
+/** A week with an easy run Tue + Sat, a swim Wed and strength Thu. */
+const week = (weekStart: string, label: string): WeekBrief => ({
   weekStart,
   label,
   focus: 'Aerobic base',
-  sessions: days.map((d) => brief(addDays(weekStart, d))),
+  sessions: [
+    brief(addDays(weekStart, 1)),
+    brief(addDays(weekStart, 2), 'swim.endurance'),
+    brief(addDays(weekStart, 3), 'strength.full'),
+    brief(addDays(weekStart, 5)),
+  ],
 });
 const FOUR_WEEKS = [
   week('2026-10-19', 'Build 1 of 3'),
   week('2026-10-26', 'Build 2 of 3'),
   week('2026-11-02', 'Build 3 of 3'),
-  week('2026-11-09', 'Deload', [1, 5]),
+  week('2026-11-09', 'Deload'),
 ];
-const programme = (weeks: WeekBrief[], replaceIds: string[] | null = null) => ({
+const programme = (weeks: WeekBrief[] = FOUR_WEEKS, replaceIds: string[] | null = null) => ({
   summary: '4-week base block',
   approach: 'Easy < 145 bpm; sub-T 4:15 /km.',
   weeks,
   replaceIds,
 });
-/** A writer that turns every brief into the fixture workout. */
-const writer = () =>
-  jest.fn<ReturnType<WriteFn>, Parameters<WriteFn>>(async ({ weeks }) =>
-    weeks.flatMap((w) =>
-      w.sessions.map((s) => ({ title: s.title, durationSec: 2700, distanceKm: null, notes: null, workout: workout(s.intensity) })),
-    ),
-  );
 const build = (callId: string, weeks = FOUR_WEEKS, replaceIds: string[] | null = null) =>
   functionCall('build_plan', programme(weeks, replaceIds), { callId });
+const noEdits: ReviewFn = async () => ({ summary: 'Sensible base block.', edits: [] });
+
+/** A writer that turns every session into the fixture workout. */
+const writer = () =>
+  jest.fn<ReturnType<WriteFn>, Parameters<WriteFn>>(async ({ sessions }) =>
+    sessions.map((s) => ({ title: s.title, durationSec: 2700, distanceKm: null, notes: null, workout: workout(s.intensity) })),
+  );
+const approve = (outline: PlanOutline) => ({
+  previousResponseId: 'resp_1',
+  event: { kind: 'outline_decision', outlineId: outline.id, decision: 'approved' },
+  snapshot,
+  outline,
+});
 
 describe('build_plan', () => {
-  it('hands two weeks to each writer and shows the whole plan as one card', async () => {
+  it('builds an outline for approval — no workouts, nothing written yet', async () => {
     const write = writer();
-    const model = new ScriptedModel([[build('c1', FOUR_WEEKS, ['a-next'])], [assistantMessage('Your block is ready.')]]);
-    const { lines } = await turn(model, message('Build my plan'), undefined, undefined, write);
+    const model = new ScriptedModel([[build('c1')], [assistantMessage('Here is the shape.')]]);
+    const { lines } = await turn(model, message('Build my plan'), undefined, noEdits, write);
 
-    expect(write).toHaveBeenCalledTimes(2);
-    const [first, second] = write.mock.calls.map(([input]) => input);
-    expect(first.weeks.map((w) => w.weekStart)).toEqual(['2026-10-19', '2026-10-26']);
-    expect(first.approach).toBe('Easy < 145 bpm; sub-T 4:15 /km.');
-    expect(second.weeks.map((w) => w.weekStart)).toEqual(['2026-11-02', '2026-11-09']);
-    expect(second.before?.label).toBe('Build 2 of 3');
-
-    const [card] = done(lines).proposals;
-    expect(done(lines).proposals).toHaveLength(1);
-    expect(card.actions).toHaveLength(1 + 11);
-    expect(card.actions[0]).toEqual({ op: 'delete', id: 'a-next', reason: 'Replaced by the new plan' });
-    expect(card.actions[1]).toMatchObject({ op: 'create', date: '2026-10-20', workoutTypeId: 'run.easy', durationSec: 2700 });
-    expect(card.weeks?.map((w) => w.label)).toEqual(['Build 1 of 3', 'Build 2 of 3', 'Build 3 of 3', 'Deload']);
-    const labels = lines.flatMap((l) => (l.type === 'working' ? [l.label] : []));
-    expect(labels).toContain('Writing your sessions · 2 of 2 parts done');
+    const d = done(lines);
+    expect(write).not.toHaveBeenCalled();
+    expect(d.proposals).toEqual([]);
+    expect(d.outline?.weeks.map((w) => w.label)).toEqual(['Build 1 of 3', 'Build 2 of 3', 'Build 3 of 3', 'Deload']);
+    expect(d.outline?.weeks[0].sessions.map((s) => s.id)).toEqual(['s1', 's2', 's3', 's4']);
+    expect(d.outline?.review).toEqual({ summary: 'Sensible base block.', changes: [] });
+    expect(JSON.stringify(model.calls[1].request.input)).toMatch(/waiting for the athlete's approval/);
     model.assertComplete();
   });
 
-  it('keeps date, type and intensity from the programme', async () => {
-    const write: WriteFn = async ({ weeks }) =>
-      weeks.flatMap((w) => w.sessions.map(() => ({ title: 'X', durationSec: null, distanceKm: null, notes: null, workout: workout('hard') })));
-    const model = new ScriptedModel([[build('c1', [week('2026-10-19', 'Base')])], [assistantMessage('Done.')]]);
-    const { lines } = await turn(model, message('Build'), undefined, undefined, write);
-    const action = done(lines).proposals[0].actions[0];
-    expect(action).toMatchObject({ date: '2026-10-20', workoutTypeId: 'run.easy', durationSec: 2700 });
-    if (action.op === 'delete') throw new Error();
-    expect(action.workout.intensity).toBe('easy');
+  it("applies the reviewer's edits and lists them on the card", async () => {
+    const review: ReviewFn = jest.fn(async ({ outline }) => ({
+      summary: 'Three builds and a deload.',
+      edits: [
+        {
+          op: 'update' as const,
+          sessionId: 's16',
+          session: { ...outline.weeks[3].sessions[3], durationMin: 30, title: 'Easy 30' },
+          weekStart: null,
+          label: null,
+          focus: null,
+          reason: 'Lighter deload week',
+        },
+        { op: 'relabel' as const, sessionId: null, session: null, weekStart: '2026-11-09', label: 'Deload', focus: '−30% volume', reason: 'Clearer focus' },
+      ],
+    }));
+    const model = new ScriptedModel([[build('c1')], [assistantMessage('Done.')]]);
+    const { lines } = await turn(model, message('Build'), undefined, review, writer());
+    const outline = done(lines).outline!;
+    expect(outline.weeks[3].sessions[3]).toMatchObject({ id: 's16', title: 'Easy 30', durationMin: 30 });
+    expect(outline.weeks[3].focus).toBe('−30% volume');
+    expect(outline.review?.changes).toEqual([
+      'Changed Sat 14 Nov “Easy 45”: Lighter deload week',
+      'Week of Mon 9 Nov → Deload: Clearer focus',
+    ]);
+    expect(lines.some((l) => l.type === 'working' && l.label === 'Reviewer checking the structure')).toBe(true);
   });
 
-  it('retries a writer that returns the wrong number of sessions', async () => {
-    const write = writer();
-    const good = write.getMockImplementation()!;
-    write.mockImplementationOnce(async (input) => (await good(input)).slice(1));
-    const model = new ScriptedModel([[build('c1', [week('2026-10-19', 'Base')])], [assistantMessage('Done.')]]);
-    const { lines } = await turn(model, message('Build'), undefined, undefined, write);
-    expect(write).toHaveBeenCalledTimes(2);
-    expect(write.mock.calls[1][0].feedback).toMatch(/exactly 3 sessions/);
-    expect(done(lines).proposals[0].actions).toHaveLength(3);
+  it('ignores a reviewer that would strip the plan, and never blocks it', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const strip: ReviewFn = async ({ outline }) => ({
+      summary: 'Too much.',
+      edits: outline.weeks.flatMap((w) => w.sessions.slice(1)).map((s) => ({
+        op: 'remove' as const, sessionId: s.id, session: null, weekStart: null, label: null, focus: null, reason: 'x',
+      })),
+    });
+    const model = new ScriptedModel([[build('c1')], [assistantMessage('Done.')]]);
+    const { lines } = await turn(model, message('Build'), undefined, strip, writer());
+    expect(done(lines).outline?.weeks.flatMap((w) => w.sessions)).toHaveLength(16);
+
+    const failing: ReviewFn = async () => {
+      throw new Error('reviewer down');
+    };
+    const again = await turn(new ScriptedModel([[build('c1')], [assistantMessage('Done.')]]), message('Build'), undefined, failing);
+    expect(done(again.lines).outline?.review).toBeNull();
   });
 
-  it('rejects programmes with past dates before writing anything', async () => {
-    const write = writer();
+  it('rejects programmes with past dates', async () => {
     const model = new ScriptedModel([[build('c1', [week('2026-10-12', 'Base')])], [assistantMessage('Fixing it.')]]);
-    await turn(model, message('Build'), undefined, undefined, write);
-    expect(write).not.toHaveBeenCalled();
+    const { lines } = await turn(model, message('Build'), undefined, noEdits);
+    expect(done(lines).outline).toBeNull();
     expect(JSON.stringify(model.calls[1].request.input)).toMatch(/NOT built.*in the past/);
   });
 
-  it('puts small follow-up changes on the same card without a review', async () => {
-    const review: ReviewFn = jest.fn(async () => ({ verdict: 'approve' as const, issues: [], summary: 'Fine.' }));
+  it('revises the outline waiting for approval with edits, keeping everything else', async () => {
+    const pending = makeOutline('o_1', programme());
     const model = new ScriptedModel([
-      [build('c1', [week('2026-10-19', 'Base')])],
-      [functionCall('propose_plan_changes', { summary: 'Add Saturday', actions: [create('2026-10-24', 'easy', 'ride.endurance')] }, { callId: 'c2' })],
-      [assistantMessage('All on one card.')],
+      [
+        functionCall(
+          'revise_plan',
+          {
+            summary: null,
+            edits: [
+              { op: 'remove', sessionId: 's2', session: null, weekStart: null, label: null, focus: null, reason: 'No pool that week' },
+              { op: 'add', sessionId: null, session: brief('2026-10-25', 'ride.endurance'), weekStart: null, label: null, focus: null, reason: 'Ride instead' },
+            ],
+          },
+          { callId: 'c1' },
+        ),
+      ],
+      [assistantMessage('Swapped the swim for a ride.')],
     ]);
-    const { lines } = await turn(model, message('Build'), undefined, review, writer());
-    expect(review).toHaveBeenCalledTimes(1);
-    const p = done(lines).proposals;
-    expect(p).toHaveLength(1);
-    expect(p[0].actions).toHaveLength(4);
-    expect(p[0].summary).toBe('Add Saturday');
+    const { lines } = await turn(model, { ...message('No pool next week'), outline: pending });
+
+    expect(JSON.stringify(model.calls[0].request)).toMatch(/Outline awaiting the athlete's approval \(o_1\)/);
+    const revised = done(lines).outline!;
+    expect(revised.id).not.toBe('o_1');
+    expect(revised.weeks[0].sessions.map((s) => s.id)).toEqual(['s1', 's3', 's4', 's17']);
+    expect(revised.weeks.flatMap((w) => w.sessions)).toHaveLength(16);
+  });
+});
+
+describe('approving an outline', () => {
+  it('shares the sessions out to specialist writers and saves the written plan', async () => {
+    const write = writer();
+    const outline = makeOutline('o_1', programme(FOUR_WEEKS, ['a-next']));
+    const model = new ScriptedModel([[assistantMessage("It's all in your calendar.")]]);
+    const { lines } = await turn(model, approve(outline), undefined, undefined, write);
+
+    // Run, swim and strength writers, two weeks each: 2 + 2 + 2 jobs.
+    const jobs = write.mock.calls.map(([input]) => `${input.sport}:${input.sessions.length}`);
+    expect(jobs.sort()).toEqual(['run:4', 'run:4', 'strength:2', 'strength:2', 'swim:2', 'swim:2']);
+    expect(write.mock.calls[0][0].approach).toBe('Easy < 145 bpm; sub-T 4:15 /km.');
+
+    const d = done(lines);
+    expect(d.proposals).toHaveLength(1);
+    expect(d.proposals[0]).toMatchObject({ id: 'o_1', autoApply: true });
+    expect(d.proposals[0].actions[0]).toEqual({ op: 'delete', id: 'a-next', reason: 'Replaced by the new plan' });
+    expect(d.proposals[0].actions.filter((a) => a.op === 'create')).toHaveLength(16);
+    expect(JSON.stringify(model.calls[0].request.input)).toMatch(/APPROVED outline o_1\. The writers wrote 16 sessions/);
+    expect(lines.some((l) => l.type === 'working' && l.label === 'Writing your sessions · 6 of 6 parts done')).toBe(true);
+  });
+
+  it('keeps date, type and intensity from the outline and retries a writer that miscounts', async () => {
+    const write = writer();
+    const good = write.getMockImplementation()!;
+    write.mockImplementationOnce(async (input) =>
+      (await good(input)).slice(1).map((s) => ({ ...s, workout: workout('hard') })),
+    );
+    const outline = makeOutline('o_1', programme([week('2026-10-19', 'Base')]));
+    const { lines } = await turn(new ScriptedModel([[assistantMessage('Saved.')]]), approve(outline), undefined, undefined, write);
+
+    const retried = write.mock.calls.find(([input]) => input.feedback);
+    expect(retried?.[0].feedback).toMatch(/exactly 2 sessions/);
+    const created = done(lines).proposals[0].actions.filter((a): a is Extract<PlanAction, { op: 'create' }> => a.op === 'create');
+    expect(created).toHaveLength(4);
+    expect(created[0]).toMatchObject({ date: '2026-10-20', workoutTypeId: 'run.easy' });
+    expect(created.every((a) => a.workout.intensity === 'easy')).toBe(true);
+  });
+
+  it('refuses an outline that has changed since', async () => {
+    const outline = makeOutline('o_2', programme());
+    const { lines } = await turn(
+      new ScriptedModel([]),
+      { ...approve(outline), event: { kind: 'outline_decision', outlineId: 'o_1', decision: 'approved' } },
+      undefined,
+      undefined,
+      writer(),
+    );
+    expect(lines.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/outline has changed/) });
+  });
+
+  it('shares an outline out per sport, two weeks at a time, skipping past days', () => {
+    const jobs = writerJobs(makeOutline('o', programme()), '2026-10-21');
+    expect(jobs.map((j) => `${j.sport}:${j.sessions.map((s) => s.date).join(',')}`)).toEqual([
+      'run:2026-10-24,2026-10-27,2026-10-31',
+      'run:2026-11-03,2026-11-07,2026-11-10,2026-11-14',
+      'swim:2026-10-21,2026-10-28',
+      'swim:2026-11-04,2026-11-11',
+      'strength:2026-10-22,2026-10-29',
+      'strength:2026-11-05,2026-11-12',
+    ]);
   });
 });
 
 describe('reviewer', () => {
-  const blocker: Review = {
-    verdict: 'revise',
-    issues: [{ severity: 'blocker', session: 'Week 4', problem: 'No lighter week after three builds', fix: 'Cut week 4 by 30%' }],
-    summary: 'Needs a deload.',
-  };
-  const approve: Review = { verdict: 'approve', issues: [], summary: 'Three builds and a deload, ~80% easy.' };
-
-  it('sends the plan back on blockers and only rewrites the weeks the coach changed', async () => {
-    const reviews = [blocker, approve];
-    const review: ReviewFn = jest.fn(async () => reviews.shift()!);
-    const write = writer();
-    const fixed = [...FOUR_WEEKS.slice(0, 3), week('2026-11-09', 'Deload', [3])];
-    const model = new ScriptedModel([[build('c1')], [build('c2', fixed)], [assistantMessage('Fixed and ready.')]]);
-    const { lines } = await turn(model, message('Plan my block'), undefined, review, write);
-
-    expect(review).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(model.calls[1].request.input)).toMatch(/reviewer wants changes.*No lighter week/);
-    expect(write).toHaveBeenCalledTimes(3); // 2 chunks, then only the chunk with week 4 again
-    const d = done(lines);
-    expect(d.proposals).toHaveLength(1);
-    expect(d.proposals[0].review).toEqual({ verdict: 'approve', summary: approve.summary, notes: [] });
-    expect(lines.some((l) => l.type === 'working' && l.label === 'Reviewing the plan')).toBe(true);
-    model.assertComplete();
-  });
-
-  it('shows the plan with its concerns after the maximum review rounds', async () => {
-    const review: ReviewFn = jest.fn(async () => blocker);
-    const model = new ScriptedModel([[build('c1')], [build('c2')], [build('c3')], [assistantMessage('Here it is.')]]);
-    const { lines } = await turn(model, message('Plan my block'), undefined, review, writer());
-    const p = done(lines).proposals;
-    expect(p).toHaveLength(1);
-    expect(p[0].review?.verdict).toBe('revise');
-    expect(p[0].review?.notes[0]).toMatch(/Week 4: No lighter week after three builds → Cut week 4 by 30%/);
-    model.assertComplete();
-  });
-
-  it("doesn't block the plan if the review fails", async () => {
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const review: ReviewFn = async () => {
-      throw new Error('reviewer down');
-    };
-    const model = new ScriptedModel([[build('c1')], [assistantMessage('Here it is.')]]);
-    const { lines } = await turn(model, message('Plan my block'), undefined, review, writer());
-    expect(done(lines).proposals[0].review).toBeNull();
-  });
-
-  it('runs the reviewer agent and returns its structured verdict', async () => {
-    const model = new ScriptedModel([[assistantMessage(JSON.stringify(approve))]]);
+  it('runs the reviewer agent and returns its edits', async () => {
+    const output: StructureReview = { summary: 'Fine.', edits: [] };
+    const model = new ScriptedModel([[assistantMessage(JSON.stringify(output))]]);
     const review = createReviewFn(createRunner(model, 'reviewer'));
-    await expect(review({ snapshot, summary: 'Week 1', actions: [create('2026-10-21')], warnings: [] })).resolves.toEqual(approve);
+    const outline = makeOutline('o_1', programme());
+    await expect(review({ snapshot, outline, warnings: [] })).resolves.toEqual(output);
     const input = JSON.stringify(model.calls[0].request.input);
     expect(input).toMatch(/Completed weekly load, last 6 weeks/);
-    expect(input).toMatch(/CREATE 2026-10-21 run.intervals/);
+    expect(input).toMatch(/\[s1\] Tue 2026-10-20 · run.easy · easy · 45 min/);
   });
 
-  it('builds a review input with loads, the calendar around the plan and the proposed workouts', () => {
-    const text = buildReviewInput({ snapshot, summary: 'Week 1', actions: [create('2026-10-21')], warnings: ['Two hard sessions'] });
+  it('builds a review input with loads, the calendar and the outline', () => {
+    const outline = makeOutline('o_1', programme(FOUR_WEEKS, ['a-next']));
+    const text = buildReviewInput({ snapshot, outline, warnings: ['Two hard sessions'] });
     expect(text).toMatch(/goal: Sub-45 10k/);
     expect(text).toMatch(/2026-10-12: 1 sessions, 0h 45m \(run 0h 45m\), 0 quality/);
-    expect(text).toMatch(/warmup 15 min \| 10× \[work 3 min Z3 4:15–4:20 \/km RPE 6, recovery 1 min Z1/);
-    expect(text).toMatch(/a-next \| Tue 2026-10-20/);
+    expect(text).toMatch(/### Week of 2026-11-09 — Deload: Aerobic base/);
+    expect(text).not.toMatch(/a-next/); // replaced, so not "kept"
     expect(text).toMatch(/- Two hard sessions/);
   });
 });
 
-describe('session writer', () => {
-  it('gets the profile, approach, the week before and numbered briefs', () => {
-    const text = buildWriterInput({
-      today: '2026-10-18',
-      profile: snapshot.profile,
-      summary: '4-week base block',
-      approach: 'Easy < 145 bpm.',
-      weeks: [week('2026-10-26', 'Build 2 of 3', [1, 3])],
-      before: week('2026-10-19', 'Build 1 of 3', [1]),
-    });
-    expect(text).toMatch(/goal: Sub-45 10k/);
-    expect(text).toMatch(/## Head coach's approach\nEasy < 145 bpm\./);
-    expect(text).toMatch(/The week before yours[\s\S]*Week of 2026-10-19 — Build 1 of 3/);
-    expect(text).toMatch(/write 2 workouts/);
-    expect(text).toMatch(/1\. Tue 2026-10-27 · run.easy · easy · 45 min · "Easy 45" — Easy 45 min, HR < 145/);
-    expect(text).toMatch(/2\. Thu 2026-10-29/);
+describe('session writers', () => {
+  it('get only the coach notes and their numbered sessions', () => {
+    const outline = makeOutline('o', programme([week('2026-10-26', 'Build 2 of 3')]));
+    const text = buildWriterInput({ sport: 'run', approach: 'Easy < 145 bpm.', sessions: outline.weeks[0].sessions.slice(0, 1) });
+    expect(text).toBe(
+      "## Coach's notes on this athlete\nEasy < 145 bpm.\n\n## Write 1 workout, one per numbered session, in order\n" +
+        '1. Tue 2026-10-27 · run.easy · easy · 45 min · "Easy 45" — Easy 45 min, HR < 145',
+    );
   });
 
-  it('runs the writer agent and returns its sessions', async () => {
-    const sessions = [{ title: 'Easy 45', durationSec: 2700, distanceKm: null, notes: null, workout: workout('easy') }];
+  it('use the specialist for the sport', async () => {
+    const sessions = [{ title: 'Easy swim', durationSec: 2700, distanceKm: 2, notes: null, workout: workout('easy') }];
     const model = new ScriptedModel([[assistantMessage(JSON.stringify({ sessions }))]]);
     const write = createWriteFn(createRunner(model, 'writer'));
-    const input = { today: '2026-10-18', profile: {}, summary: 'Base', approach: 'Easy', weeks: [week('2026-10-19', 'Base', [1])], before: null };
-    await expect(write(input)).resolves.toEqual(sessions);
+    const outline = makeOutline('o', programme([week('2026-10-19', 'Base')]));
+    await expect(write({ sport: 'swim', approach: 'CSS 1:45', sessions: outline.weeks[0].sessions.slice(1, 2) })).resolves.toEqual(sessions);
+    expect(JSON.stringify(model.calls[0].request)).toMatch(/You are the swimming specialist/);
   });
 });

@@ -3,23 +3,28 @@ import { user, type Agent, type AgentInputItem, type Runner } from '@openai/agen
 import {
   TurnRequestSchema,
   type PendingToolOutput,
+  type Proposal,
   type StreamLine,
   type TurnEvent,
 } from '../../src/coach/contract';
 import { createContext, type CoachContext } from './agent';
 import type { ReviewFn } from './reviewer';
+import { writePlan } from './write-plan';
 import type { WriteFn } from './writer';
 
 const WORKING_LABELS: Record<string, string> = {
   get_activities: 'Checking your calendar',
   update_athlete_profile: 'Noting that down',
-  build_plan: 'Handing sessions to the writers',
+  build_plan: 'Checking the programme',
+  revise_plan: 'Updating the outline',
   propose_plan_changes: 'Checking the changes',
+  web_search: 'Looking that up',
 };
 
 /** Shown while the model is still writing a tool call's arguments (a long programme takes a while). */
 const WRITING_LABELS: Record<string, string> = {
   build_plan: 'Programming your plan',
+  revise_plan: 'Revising the outline',
   propose_plan_changes: 'Writing the changes',
 };
 
@@ -29,9 +34,16 @@ export function toolCallStarted(event: unknown): string | null {
   return e?.type === 'response.output_item.added' && e.item?.type === 'function_call' ? (e.item.name ?? null) : null;
 }
 
-/** Turns an app event into the user input for this turn. */
-export function eventToInput(event: TurnEvent): string {
+/** Turns an app event into the user input for this turn. `written` = sessions saved from an approved outline. */
+export function eventToInput(event: TurnEvent, written = 0): string {
   if (event.kind === 'message') return event.text;
+  if (event.kind === 'outline_decision') {
+    return event.decision === 'approved'
+      ? `[App] The athlete APPROVED outline ${event.outlineId}. The writers wrote ${written} sessions and they're now in the calendar. Confirm briefly and say what to focus on first.`
+      : `[App] The athlete DECLINED outline ${event.outlineId}. ${
+          event.feedback ? `Their reason: ${event.feedback}` : 'No reason given — ask briefly what to change.'
+        }`;
+  }
   if (event.decision === 'accepted') {
     return `[App] The athlete ACCEPTED proposal ${event.proposalId}; ${event.applied ?? 'all'} change(s) saved to the calendar.${
       event.feedback ? ` They added: ${event.feedback}` : ''
@@ -90,9 +102,9 @@ interface Options {
   runner: Runner;
   /** Shared secret the app sends as a Bearer token. Unset = no auth (logged as a warning at startup). */
   token?: string;
-  /** Reviewer agent run on every proposal; omit to skip reviews. */
+  /** Structure reviewer run on every new outline; omit to skip reviews. */
   review?: ReviewFn;
-  /** Session writers for build_plan. */
+  /** Session writers, run when the athlete approves an outline. */
   write?: WriteFn;
   maxTurns?: number;
 }
@@ -107,13 +119,13 @@ export function createCoachHandler({ agent, runner, token, review, write, maxTur
     if (!parsed.success) {
       return Response.json({ error: 'Bad request', issues: parsed.error.issues.slice(0, 5) }, { status: 400 });
     }
-    const { event, snapshot, previousResponseId, pendingToolOutputs } = parsed.data;
+    const { event, snapshot, previousResponseId, pendingToolOutputs, outline } = parsed.data;
     const encoder = new TextEncoder();
 
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (line: StreamLine) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
-        const context = createContext(snapshot, { review, write, signal: req.signal });
+        const context = createContext(snapshot, { review, pendingOutline: outline, signal: req.signal });
         context.onProgress = (label) => send({ type: 'working', label });
         let text = '';
         let pendingBreak = false;
@@ -152,8 +164,22 @@ export function createCoachHandler({ agent, runner, token, review, write, maxTur
           return result.lastResponseId ?? null;
         };
 
+        let written: Proposal | null = null;
         try {
-          const input = eventToInput(event);
+          // An approved outline: the specialist writers write every session first, then the coach confirms.
+          if (event.kind === 'outline_decision' && event.decision === 'approved') {
+            if (!write) throw new Error('The session writers aren’t available.');
+            if (!outline || outline.id !== event.outlineId) throw new Error('That outline has changed — approve the latest one.');
+            const actions = await writePlan(outline, snapshot, write, {
+              signal: req.signal,
+              onProgress: (label) => send({ type: 'working', label }),
+            });
+            written = { id: outline.id, summary: outline.summary, actions, autoApply: true };
+            context.proposals = [written];
+            context.pendingOutline = null;
+          }
+          const created = written?.actions.filter((a) => a.op === 'create').length ?? 0;
+          const input = eventToInput(event, created);
           // Outputs for tool calls an earlier turn left unanswered (see danglingCallId), sent with this turn.
           const repairs: AgentInputItem[] = [];
           const carried: AgentInputItem[] = previousResponseId
@@ -190,11 +216,27 @@ export function createCoachHandler({ agent, runner, token, review, write, maxTur
             pendingToolOutputs: pendingAfter,
             text,
             proposals: context.proposals,
+            outline: context.outline,
             choices: context.choices,
             profile: context.profile,
           });
         } catch (error) {
           const message = errorText(error);
+          if (written && !req.signal.aborted) {
+            // The sessions are written; don't lose them because the confirmation failed.
+            console.error('[coach] confirmation failed after writing the plan:', message);
+            send({
+              type: 'done',
+              responseId: previousResponseId,
+              pendingToolOutputs: pendingToolOutputs ?? [],
+              text: text || 'Your plan is written and in your calendar.',
+              proposals: [written],
+              outline: null,
+              choices: null,
+              profile: context.profile,
+            });
+            return;
+          }
           console.error('[coach] turn failed:', message);
           send({ type: 'error', message, resetThread: isStaleThreadError(error) });
         } finally {

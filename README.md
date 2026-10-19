@@ -66,19 +66,22 @@ Settings in `.env.local`:
 | `COACH_MODEL` | `gpt-5.6-terra` | `gpt-5.6-luna` is ~10× cheaper, `gpt-5.6-sol` is stronger |
 | `COACH_REASONING` | `low` | `medium` / `high` for more careful plans (slower, pricier) |
 | `COACH_TRACING` | on | `off` to stop sending traces to platform.openai.com/traces (health details are never included) |
-| `COACH_WRITER_MODEL` | same as `COACH_MODEL` | model for the session writers (the agents that write each 2-week chunk of a plan) |
+| `COACH_WRITER_MODEL` | same as `COACH_MODEL` | model for the specialist session writers |
 | `COACH_WRITER_REASONING` | `low` | reasoning effort for the session writers |
-| `COACH_REVIEW` | on | `off` to skip the reviewer (an agent that checks every plan against the research) |
+| `COACH_REVIEW` | on | `off` to skip the reviewer (it checks and adjusts every plan outline) |
 | `COACH_REVIEW_MODEL` | same as `COACH_MODEL` | model for the reviewer |
 | `COACH_REVIEW_REASONING` | `medium` | reasoning effort for the reviewer |
 
 Rough cost on Terra: ~$0.50–1 to build a 12-week plan (most of it is the writers producing every workout;
 the reviewer adds a few cents), ~$0.05–0.15 for a tweak. A 12-week plan takes roughly 1–2 minutes.
 
-How the coach plans: it's a small team. The coach talks to you and programmes the whole plan (weeks, phases,
-which session on which day); session writers fill in the full workouts two weeks each, in parallel; a reviewer
-checks the result; you get one card and **Accept all**. The method is Norwegian (80/20, sub-threshold
-intervals) in 3:1 build/deload blocks — the research is in `docs/research/`.
+How the coach plans: it's a small team.
+1. The coach talks to you and programmes the plan: weeks, phases, which session on which day and what it's for.
+2. A reviewer checks that structure against the method (Norwegian 80/20, sub-threshold intervals, 3:1
+   build/deload blocks — research in `docs/research/`) and adjusts it, listing what it changed.
+3. You approve the outline, or ask for changes in the chat.
+4. Then specialist writers (run, ride, swim, strength, Hyrox) write every workout in parallel and the sessions
+   go into your calendar.
 
 If the Plan tab says it can't reach the coach: check `npm run dev` is running, the phone is on the same
 Wi-Fi as the Mac, and allow incoming connections for `node` if macOS asks. `npm run coach:demo` runs a

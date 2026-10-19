@@ -1,16 +1,13 @@
-import { Agent, Runner, tool, type Model, type RunContext } from '@openai/agents';
+import { Agent, Runner, tool, webSearchTool, type Model, type RunContext } from '@openai/agents';
 import { z } from 'zod';
 
 import { ActionSchema, AthleteProfileSchema, IsoDate, type AthleteProfilePatch } from '../../src/coach/contract';
-import { buildPlan } from './build-plan';
-import { addToProposal, ctx, reviewChanges, withDraft, type CoachContext } from './context';
+import { buildPlan, revisePlan } from './build-plan';
+import { addToProposal, ctx, withDraft, type CoachContext } from './context';
 import { activityLine, buildInstructions } from './instructions';
 import { validateActions } from './validate';
 
-export { createContext, MAX_REVIEW_ROUNDS, type CoachContext } from './context';
-
-/** Small edits skip the reviewer (it adds ~20 s); anything bigger gets a second opinion. */
-const REVIEW_FROM_SESSIONS = 3;
+export { createContext, type CoachContext } from './context';
 
 const getActivities = tool({
   name: 'get_activities',
@@ -59,8 +56,9 @@ const offerChoices = tool({
 const proposePlanChanges = tool({
   name: 'propose_plan_changes',
   description:
-    'For a few changes: add, move, swap, shorten or remove sessions, with full workouts you write yourself. ' +
-    'Shown as a card with Accept / Decline; nothing is saved until they accept. To build a plan or a block, use build_plan.',
+    'For a few changes to the calendar: add, move, swap, shorten or remove sessions, with full workouts you write ' +
+    'yourself. Shown as a card with Accept / Decline; nothing is saved until they accept. To plan weeks or a ' +
+    'block, use build_plan.',
   parameters: z.object({
     summary: z.string().describe('One line, e.g. "Swap Thursday\'s intervals for an easy ride"'),
     actions: z.array(ActionSchema),
@@ -72,27 +70,25 @@ const proposePlanChanges = tool({
     const { errors, warnings } = validateActions(actions, snapshot);
     if (errors.length) return `NOT shown — fix these and call propose_plan_changes again:\n- ${errors.join('\n- ')}`;
 
-    const sessions = actions.filter((a) => a.op !== 'delete').length;
-    const { blocked, review } =
-      sessions >= REVIEW_FROM_SESSIONS
-        ? await reviewChanges(c, { snapshot, summary, actions, warnings, earlier: draft?.actions.length ?? 0 })
-        : { blocked: null, review: null };
-    if (blocked) return `NOT shown — the reviewer wants changes. Fix them and call propose_plan_changes again:\n- ${blocked}`;
-
-    const card = addToProposal(c, { summary, actions, review });
+    const card = addToProposal(c, { summary, actions });
     const notes = warnings.length ? `\nChecks (advice, not rules):\n- ${warnings.join('\n- ')}` : '';
-    const reviewNote = review?.notes.length
-      ? `\nThe reviewer ${review.verdict === 'revise' ? 'still has concerns' : 'approved, noting'}:\n- ${review.notes.join('\n- ')}`
-      : '';
-    return `Card ${card.id} is on the athlete's screen with Accept / Decline. Briefly explain the change.${notes}${reviewNote}`;
+    return `Card ${card.id} is on the athlete's screen with Accept / Decline. Briefly explain the change.${notes}`;
   },
 });
 
 export function createCoachAgent(): Agent<CoachContext> {
   return new Agent<CoachContext>({
     name: 'Coach',
-    instructions: (rc) => buildInstructions(rc.context.snapshot),
-    tools: [getActivities, updateAthleteProfile, offerChoices, buildPlan, proposePlanChanges],
+    instructions: (rc) => buildInstructions(rc.context.snapshot, rc.context.outline ?? rc.context.pendingOutline),
+    tools: [
+      getActivities,
+      updateAthleteProfile,
+      offerChoices,
+      buildPlan,
+      revisePlan,
+      proposePlanChanges,
+      webSearchTool({ searchContextSize: 'low' }),
+    ],
     // Stop as soon as choices are shown so the athlete can answer. OpenAI hasn't seen that tool's output
     // yet, so the handler returns it as `pendingToolOutputs` and the next turn sends it first.
     toolUseBehavior: { stopAtToolNames: ['offer_choices'] },

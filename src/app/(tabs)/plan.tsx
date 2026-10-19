@@ -8,6 +8,7 @@ import { upcomingCoachSessions } from '@/coach/apply';
 import { knownDetails } from '@/coach/profile-fields';
 import { useCoachConversation } from '@/coach/use-coach-conversation';
 import { ChoiceChips, CoachBubble, LiveBubble, NoteLine, UserBubble } from '@/components/coach/messages';
+import { OutlineCard } from '@/components/coach/outline-card';
 import { ProposalCard } from '@/components/coach/proposal-card';
 import { WeekBalance } from '@/components/coach/week-balance';
 import { ScreenHeader } from '@/components/screen-header';
@@ -138,6 +139,14 @@ export default function PlanScreen() {
                     onDecline={() => conv.decline(m.id, p.id)}
                   />
                 ))}
+                {m.outline && (
+                  <OutlineCard
+                    outline={m.outline}
+                    disabled={conv.busy}
+                    onApprove={() => conv.approveOutline(m.outline!.id)}
+                    onDecline={() => conv.declineOutline(m.outline!.id)}
+                  />
+                )}
                 {m.choices && !m.answered && i === lastCoachIndex && (
                   <ChoiceChips choices={m.choices} disabled={conv.busy} onAnswer={(a) => conv.choose(m.id, a)} />
                 )}

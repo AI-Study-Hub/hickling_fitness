@@ -72,44 +72,75 @@ export const DeleteActionSchema = z.object({
 export const ActionSchema = z.union([CreateActionSchema, UpdateActionSchema, DeleteActionSchema]);
 export type PlanAction = z.infer<typeof ActionSchema>;
 
-// ── Review of a proposal (the reviewer agent's structured output) ───────────────────────────────────
-
-export const ReviewIssueSchema = z.object({
-  severity: z.enum(['blocker', 'minor']).describe('blocker = breaks a rule and must be fixed; minor = worth a note'),
-  session: z.string().nullable().describe('Which session, e.g. "Thu 22 Oct · 4 × 6 min sub-T", or null for the plan'),
-  problem: z.string(),
-  fix: z.string(),
-});
-
-export const ReviewSchema = z.object({
-  verdict: z.enum(['approve', 'revise']).describe('revise only if there is at least one blocker'),
-  issues: z.array(ReviewIssueSchema),
-  summary: z.string().describe('One sentence on how the plan fits the rules'),
-});
-export type Review = z.infer<typeof ReviewSchema>;
-
-/** What the athlete sees about the review on the proposal card. */
-export const ProposalReviewSchema = z.object({
-  verdict: z.enum(['approve', 'revise']),
-  summary: z.string(),
-  notes: z.array(z.string()),
-});
-
-/** Where a week sits in the plan, e.g. "Build 2 of 3", "Deload", "Taper 1 of 2", "Race week". */
-export const WeekLabelSchema = z.object({
-  weekStart: IsoDate.describe('Monday of the week'),
-  label: z.string().max(40),
-});
-export type WeekLabel = z.infer<typeof WeekLabelSchema>;
-
 export const ProposalSchema = z.object({
   id: z.string(),
   summary: z.string(),
   actions: z.array(ActionSchema),
-  weeks: z.array(WeekLabelSchema).nullish(),
-  review: ProposalReviewSchema.nullish(),
+  /** Written from an approved outline: the app saves it straight away instead of showing Accept / Decline. */
+  autoApply: z.boolean().nullish(),
 });
 export type Proposal = z.infer<typeof ProposalSchema>;
+
+// ── Plan outlines: the structure the coach programmes and the athlete approves ──────────────────────
+// The coach programmes weeks and sessions (no workouts yet); the reviewer adjusts the structure with edits;
+// the athlete approves the outline; only then do the session writers fill in the workouts.
+
+export const SessionBriefSchema = z.object({
+  date: IsoDate,
+  workoutTypeId: z.enum(WORKOUT_TYPE_IDS),
+  title: z.string().min(1).max(60),
+  intensity: z.enum(['easy', 'moderate', 'hard']).describe('easy = Z1–2; moderate = sub-threshold; hard = Z4–5'),
+  durationMin: z.number().positive().nullable(),
+  distanceKm: z.number().positive().nullable(),
+  brief: z.string().describe('The key prescription in one line, e.g. "8 × 3 min sub-T @ 4:15–4:20 /km, 60 s jog"'),
+});
+export type SessionBrief = z.infer<typeof SessionBriefSchema>;
+
+export const WeekBriefSchema = z.object({
+  weekStart: IsoDate.describe('Monday of the week'),
+  label: z.string().max(40).describe('"Build 1 of 3", "Deload", "Taper 2 of 2", "Race week"…'),
+  focus: z.string().describe('What the week is for, e.g. "More sub-threshold volume; long run 85 min"'),
+  sessions: z.array(SessionBriefSchema),
+});
+export type WeekBrief = z.infer<typeof WeekBriefSchema>;
+
+export const OutlineSessionSchema = SessionBriefSchema.extend({ id: z.string() });
+export type OutlineSession = z.infer<typeof OutlineSessionSchema>;
+
+export const OutlineWeekSchema = WeekBriefSchema.extend({ sessions: z.array(OutlineSessionSchema) });
+export type OutlineWeek = z.infer<typeof OutlineWeekSchema>;
+
+export const PlanOutlineSchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  /** The coach's notes for the session writers: paces / HR / power per zone, progression, preferences. */
+  approach: z.string(),
+  weeks: z.array(OutlineWeekSchema),
+  /** Planned sessions this plan replaces (removed when it's saved). */
+  replaceIds: z.array(z.string()),
+  /** What the reviewer changed, shown on the outline card. */
+  review: z.object({ summary: z.string(), changes: z.array(z.string()) }).nullish(),
+});
+export type PlanOutline = z.infer<typeof PlanOutlineSchema>;
+
+/** A change to an outline — made by the reviewer, or by the coach when the athlete asks for one. */
+export const OutlineEditSchema = z.object({
+  op: z.enum(['update', 'add', 'remove', 'relabel']),
+  sessionId: z.string().nullable().describe('update / remove: id of the session, e.g. "s12"'),
+  session: SessionBriefSchema.nullable().describe('update / add: the complete new session'),
+  weekStart: IsoDate.nullable().describe('relabel: Monday of the week'),
+  label: z.string().max(40).nullable().describe('relabel: the new week label, or null to keep it'),
+  focus: z.string().nullable().describe('relabel: the new week focus, or null to keep it'),
+  reason: z.string().describe('Why, in a short sentence the athlete will read'),
+});
+export type OutlineEdit = z.infer<typeof OutlineEditSchema>;
+
+/** The reviewer's structured output: edits to the outline, never a verdict. */
+export const StructureReviewSchema = z.object({
+  summary: z.string().describe('One sentence on the shape of the plan after your changes'),
+  edits: z.array(OutlineEditSchema),
+});
+export type StructureReview = z.infer<typeof StructureReviewSchema>;
 
 // ── Athlete profile (what the coach has learned) ────────────────────────────────────────────────────
 
@@ -177,6 +208,12 @@ export const TurnEventSchema = z.union([
     applied: z.number().int().nullish(),
     feedback: z.string().max(2000).nullish(),
   }),
+  z.object({
+    kind: z.literal('outline_decision'),
+    outlineId: z.string(),
+    decision: z.enum(['approved', 'declined']),
+    feedback: z.string().max(2000).nullish(),
+  }),
 ]);
 export type TurnEvent = z.infer<typeof TurnEventSchema>;
 
@@ -197,6 +234,8 @@ export const TurnRequestSchema = z.object({
   pendingToolOutputs: z.array(PendingToolOutputSchema).max(10).nullish(),
   event: TurnEventSchema,
   snapshot: SnapshotSchema,
+  /** The latest outline still waiting for approval, so the coach can revise it and the writers can write it. */
+  outline: PlanOutlineSchema.nullish(),
 });
 export type TurnRequest = z.infer<typeof TurnRequestSchema>;
 
@@ -216,6 +255,8 @@ export type StreamLine =
       pendingToolOutputs: PendingToolOutput[];
       text: string;
       proposals: Proposal[];
+      /** A new outline for the athlete to approve. */
+      outline: PlanOutline | null;
       choices: Choices | null;
       profile: AthleteProfilePatch;
     }

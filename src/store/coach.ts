@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { AthleteProfilePatch, Choices, PendingToolOutput, Proposal } from '@/coach/contract';
+import type { AthleteProfilePatch, Choices, PendingToolOutput, PlanOutline, Proposal } from '@/coach/contract';
 
 export type ProposalStatus = 'pending' | 'accepted' | 'declined';
 
@@ -10,6 +10,15 @@ export interface ProposalView extends Proposal {
   status: ProposalStatus;
   /** How many changes were saved when accepted (some can be skipped if the calendar moved on). */
   applied?: number;
+}
+
+/** pending → building (writers at work) → built; or declined, or superseded by a revised outline. */
+export type OutlineStatus = 'pending' | 'building' | 'built' | 'declined' | 'superseded';
+
+export interface OutlineView extends PlanOutline {
+  status: OutlineStatus;
+  /** Sessions saved once built. */
+  saved?: number;
 }
 
 export type CoachMessage =
@@ -20,6 +29,8 @@ export type CoachMessage =
       text: string;
       at: number;
       proposals?: ProposalView[];
+      /** A plan outline waiting for approval (the workouts are written once it's approved). */
+      outline?: OutlineView;
       choices?: Choices | null;
       /** Set once the athlete has answered the choices. */
       answered?: boolean;
@@ -38,6 +49,8 @@ interface CoachState {
   addMessage: (message: CoachMessage) => void;
   updateMessage: (id: string, patch: Partial<CoachMessage>) => void;
   updateProposal: (messageId: string, proposalId: string, patch: Partial<ProposalView>) => void;
+  /** Updates the outline with this id, wherever it is in the thread. */
+  updateOutline: (outlineId: string, patch: Partial<OutlineView>) => void;
   setThread: (lastResponseId: string | null, pendingToolOutputs: PendingToolOutput[]) => void;
   mergeProfile: (patch: AthleteProfilePatch) => void;
   /** Replaces the profile (edited on the "Your details" screen). */
@@ -68,6 +81,12 @@ export const useCoach = create<CoachState>()(
               : m,
           ),
         })),
+      updateOutline: (outlineId, patch) =>
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.role === 'coach' && m.outline?.id === outlineId ? { ...m, outline: { ...m.outline, ...patch } } : m,
+          ),
+        })),
       setThread: (lastResponseId, pendingToolOutputs) => set({ lastResponseId, pendingToolOutputs }),
       mergeProfile: (patch) => set((s) => ({ profile: { ...s.profile, ...patch } })),
       setProfile: (profile) => set({ profile }),
@@ -80,3 +99,13 @@ export const useCoach = create<CoachState>()(
     },
   ),
 );
+
+/** The newest outline still waiting for approval (or being written), if any. */
+export function pendingOutline(messages: CoachMessage[]): OutlineView | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'coach' && m.outline) return m.outline.status === 'pending' || m.outline.status === 'building' ? m.outline : null;
+  }
+  return null;
+}
+

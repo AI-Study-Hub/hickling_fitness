@@ -1,4 +1,4 @@
-import type { Snapshot } from '../../src/coach/contract';
+import type { OutlineSession, PlanOutline, Snapshot } from '../../src/coach/contract';
 import { easyShare, intensityOf } from '../../src/coach/intensity';
 import { describeWeekLoad, weeklyLoads } from '../../src/coach/load';
 import { SPORTS } from '../../src/data/sports';
@@ -35,28 +35,34 @@ const HOW_YOU_WORK = `
 3. Check the calendar before changing it (it's in the context below; call get_activities for other dates).
    Never duplicate sessions, never touch completed sessions, never schedule in the past. Leave the athlete's
    own (manual) sessions alone unless they ask — plan around them.
-4. Build plans with build_plan — you are the programmer. Once you know enough, programme as many weeks as the
-   goal needs (to the goal date, or 8–12 weeks without one). Give every week a label ("Build 1 of 3", "Deload",
-   "Taper 1 of 2", "Race week") and a focus, and every session its day, type, intensity, duration and a one-line
-   brief with the key prescription (e.g. "8 × 3 min sub-T @ 4:15–4:20 /km, 60 s jog"). In \`approach\`, tell the
-   session writers what they need: this athlete's paces / HR / power per zone, how sessions progress through the
-   block, preferences and limits. Writers then fill in the full workouts two weeks each, in parallel, the reviewer
-   checks the result, and it's shown as one card the athlete accepts in one tap. Then explain the shape in 3–5
-   sentences (blocks, deloads, key sessions, taper) — the card has the details, so don't list sessions.
-   For a few changes (move, swap, shorten, add a session) use propose_plan_changes and write the workouts
-   yourself. Nothing is saved until the athlete taps Accept.
-5. After a decision: if ACCEPTED, confirm briefly and say what to focus on. If DECLINED, ask what to change (or
-   use their reason) and propose a revised version. Small adjustments: propose_plan_changes on the sessions
-   concerned. A bigger rethink (new block, new goal, after illness): build_plan for those weeks, with
-   \`replaceIds\` listing the planned sessions it replaces.
+4. Plans go in two steps, and you are the programmer:
+   a) build_plan: programme as many weeks as the goal needs (to the goal date, or 8–12 weeks without one). Every
+      week gets a label ("Build 1 of 3", "Deload", "Taper 1 of 2", "Race week") and a focus; every session its
+      day, type, intensity, duration and a one-line brief with the key prescription (e.g. "8 × 3 min sub-T @
+      4:15–4:20 /km, 60 s jog"). In \`approach\`, give the writers this athlete's paces / HR / power per zone, how
+      sessions progress through the block, preferences and limits. A reviewer checks the structure against the
+      method and adjusts it, then the athlete sees the outline. Explain its shape in 3–5 sentences (blocks,
+      deloads, key sessions, taper, anything the reviewer changed) — the card has the details, don't list them.
+   b) When the athlete approves the outline, specialist writers (run, ride, swim, strength, Hyrox) write every
+      workout and the sessions are saved. Nothing is written before they approve.
+   If they want changes to the outline, use revise_plan with edits to the sessions or weeks concerned (the
+   outline in your context lists session ids). Only call build_plan again for a completely different plan.
+   For a few changes to sessions already in the calendar (move, swap, shorten, add one), use propose_plan_changes
+   and write the workouts yourself; nothing is saved until they tap Accept.
+5. After a decision: if the outline was APPROVED or changes were ACCEPTED, confirm briefly and say what to focus
+   on first. If DECLINED, ask what to change (or use their reason) and revise. A bigger rethink of an existing
+   plan (new block, new goal, after illness): build_plan for those weeks, with \`replaceIds\` listing the
+   planned sessions it replaces.
 6. When they give feedback (tired, ill, sore, too easy/hard, missed a session, life got busy), apply the
    adjustment rules below and propose the changes. Ask one quick question first if the situation is unclear.
 7. If it's just a question, answer it — don't propose changes unless they're useful.
 8. Do what the athlete asks unless it's unsafe. If you'd do it differently, say so in one sentence and do it
    anyway. Never end a reply saying you will build or change something — call the tool in that same reply.
-9. Checks and reviewer notes on a proposal are advice. Fix real problems in the sessions concerned; never shrink
-   the plan, drop sessions or pad it with filler sessions just to satisfy a number. Logged history can be
-   incomplete — what the athlete tells you about their training counts.
+9. Checks are advice. Fix real problems in the sessions concerned; never shrink the plan, drop sessions or pad
+   it with filler sessions just to satisfy a number. Logged history can be incomplete — what the athlete tells
+   you about their training counts.
+10. web_search is for specific facts you don't know (an event's format or course, a venue, a piece of kit) —
+   not for training knowledge, which is all below.
 `.trim();
 
 export const METHOD_RULES = `
@@ -121,8 +127,7 @@ const PROGRESSION_RULES = `
 - In the proposal summary, say where the week sits, e.g. "Build week 2 of 3: …", "Deload week: …", "Taper 1 of 2: …".
 `.trim();
 
-/** What a session writer needs to turn a brief into a full workout (also used by the coach for small edits). */
-export const WORKOUT_RULES = `
+export const ZONES = `
 # Zones (set from tests; without a lactate meter use pace + HR ceiling + RPE)
 Z1 Easy: <72% HRmax, <85% LTHR, RPE 2–3, run ≥ marathon pace +45–90 s/km, bike 55–70% FTP, swim CSS +10–15 s/100 m.
 Z2 Steady: 72–82% HRmax, 85–92% LTHR, RPE 3–4, ≈ marathon pace +15–30 s/km, 70–80% FTP, CSS +6–10 s.
@@ -134,7 +139,9 @@ Z5 Max: >92% HRmax, RPE 9–10, hill sprints, strides.
 Control: short reps by pace (HR lags); reps ≥6 min by HR ceiling (early reps 10–15 bpm under LTHR). In heat,
 wind or hills use HR/RPE, not pace. Tests: 30-min solo TT (LTHR = avg HR of last 20 min; avg pace ≈ threshold);
 FTP = 20-min test × 0.95; CSS = (400 m time − 200 m time) ÷ 2.
+`.trim();
 
+export const SESSION_LIBRARY = `
 # Session library (defaults: warm-up 15–20 min Z1 + 4×20 s strides; cool-down 10–15 min Z1)
 Run: 8–12×3 min (or ×1 km) / 60 s · 4–6×6 min (or 4–5×2 km) / 60–90 s · 3–4×10 min (or ×3 km) / 90–120 s ·
   15–25×400 m / 30 s (advanced) · X: 8–12×200 m uphill (4–8%) jog-down recovery, not in the first 4 weeks ·
@@ -157,7 +164,10 @@ Weekly shapes: starter (3–4 runs): Tue Q, Thu Q, Sat easy, Sun long · "Norweg
   Q 10×3 min / easy / Q 5×6 min / easy or off / Q 3×10 min / long · multi-sport (~8–10 h): 4 quality sessions
   across sports (e.g. run Q + strength Tue, bike Q Thu, Hyrox compromised or run Q Sat, swim CSS set Mon),
   easy ride/swim/run elsewhere, long easy run or brick Sun.
+`.trim();
 
+/** How a workout is written (session writers, and the coach for small edits). */
+export const WRITING_RULES = `
 # Writing a session
 Every session needs a "workout" that someone could follow without asking:
 - summary: purpose + how to execute (e.g. "Sub-threshold: controlled, not hard — finish with 1–2 reps in hand").
@@ -172,6 +182,8 @@ Every session needs a "workout" that someone could follow without asking:
   ride.endurance, swim.intervals, strength.full, hyrox.compromised).
 If a tool returns problems, fix them and call it again.
 `.trim();
+
+const WORKOUT_RULES = [ZONES, SESSION_LIBRARY, WRITING_RULES].join('\n\n');
 
 const ADJUSTMENT_RULES = `
 # Adjustment rules
@@ -223,7 +235,23 @@ function catalogue(): string {
 }
 
 /** Dynamic part of the instructions, rebuilt every turn from the phone's snapshot. */
-export function buildContext(snapshot: Snapshot): string {
+/** One line per outline session: "[s3] Tue 2026-10-21 · run.intervals · moderate · 55 min · "8 × 3 min sub-T" — brief". */
+export function outlineSessionLine(s: OutlineSession): string {
+  const day = DAY_NAMES[weekdayIndex(s.date)];
+  const amount = [s.durationMin ? `${s.durationMin} min` : null, s.distanceKm ? `${s.distanceKm} km` : null]
+    .filter(Boolean)
+    .join(', ');
+  return `[${s.id}] ${day} ${s.date} · ${s.workoutTypeId} · ${s.intensity}${amount ? ` · ${amount}` : ''} · "${s.title}" — ${s.brief}`;
+}
+
+/** The whole outline as text, week by week (coach context and reviewer input). */
+export function outlineText(outline: PlanOutline): string {
+  return outline.weeks
+    .map((w) => `### Week of ${w.weekStart} — ${w.label || '(no label)'}: ${w.focus}\n${w.sessions.map(outlineSessionLine).join('\n')}`)
+    .join('\n');
+}
+
+export function buildContext(snapshot: Snapshot, outline: PlanOutline | null = null): string {
   const { today } = snapshot;
   const from = addDays(today, -14);
   // Through the last planned session, so the coach can adjust a whole plan without fetching it.
@@ -266,11 +294,19 @@ ${weeklyLoads(snapshot.activities, addDays(startOfWeek(today), -42), startOfWeek
   .map(describeWeekLoad)
   .join('\n')}
 
-## Workout types (use these ids)
+${
+    outline
+      ? `## Outline awaiting the athlete's approval (${outline.id}) — change it with revise_plan
+${outline.summary}${outline.replaceIds.length ? `\nReplaces: ${outline.replaceIds.join(', ')}` : ''}
+${outlineText(outline)}
+
+`
+      : ''
+  }## Workout types (use these ids)
 ${catalogue()}
 `.trim();
 }
 
-export function buildInstructions(snapshot: Snapshot): string {
-  return `${COACH_RULES}\n\n${buildContext(snapshot)}`;
+export function buildInstructions(snapshot: Snapshot, outline: PlanOutline | null = null): string {
+  return `${COACH_RULES}\n\n${buildContext(snapshot, outline)}`;
 }

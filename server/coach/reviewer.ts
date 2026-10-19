@@ -1,79 +1,56 @@
-import { Agent, type Runner } from '@openai/agents';
+/**
+ * The reviewer checks the structure of a plan outline against the Norwegian method and the progression research
+ * and adjusts it with edits. It never blocks: its edits are applied and listed on the outline card.
+ */
+import { Agent, webSearchTool, type Runner } from '@openai/agents';
 
-import { ReviewSchema, type PlanAction, type Review, type Snapshot } from '../../src/coach/contract';
-import { describeWeekLoad, weeklyLoads } from '../../src/coach/load';
+import { StructureReviewSchema, type PlanOutline, type Snapshot, type StructureReview } from '../../src/coach/contract';
+import { describeWeekLoad, weeklyLoads, type LoadSession } from '../../src/coach/load';
+import { outlineSessions } from '../../src/coach/outline';
 import { addDays, startOfWeek } from '../../src/lib/dates';
-import { activityLine } from './instructions';
+import { activityLine, outlineText } from './instructions';
 import { REVIEW_RULES } from './review-rules';
 
 export interface ReviewInput {
   snapshot: Snapshot;
-  summary: string;
-  actions: PlanAction[];
+  outline: PlanOutline;
   /** Findings from the deterministic checks in validate.ts. */
   warnings: string[];
-  /** Sessions from earlier parts of the same proposal, already checked (they're in the snapshot as draft-…). */
-  earlier?: number;
 }
 
-export type ReviewFn = (input: ReviewInput) => Promise<Review>;
+export type ReviewFn = (input: ReviewInput, signal?: AbortSignal) => Promise<StructureReview>;
 
-export function createReviewerAgent(): Agent<unknown, typeof ReviewSchema> {
+export function createReviewerAgent(): Agent<unknown, typeof StructureReviewSchema> {
   return new Agent({
     name: 'Reviewer',
     instructions: REVIEW_RULES,
-    outputType: ReviewSchema,
+    outputType: StructureReviewSchema,
+    tools: [webSearchTool({ searchContextSize: 'low' })],
   });
 }
 
-/** "15 min Z1 | 5× [6 min Z3 4:20–4:25 /km, 75 s Z1] | 10 min Z1" */
-export function describeWorkout(workout: Extract<PlanAction, { op: 'create' }>['workout']): string {
-  const step = (s: (typeof workout.blocks)[number]['steps'][number]) => {
-    const amount = s.distanceM ? `${s.distanceM} m` : s.durationSec ? `${Math.round(s.durationSec / 6) / 10} min` : '?';
-    const t = s.target;
-    const target = [t?.zone ? `Z${t.zone}` : null, t?.pace, t?.heartRate, t?.power, t?.rpe ? `RPE ${t.rpe}` : null]
-      .filter(Boolean)
-      .join(' ');
-    return [s.label ?? s.kind, amount, target].filter(Boolean).join(' ');
-  };
-  return workout.blocks
-    .map((b) => (b.repeat > 1 ? `${b.repeat}× [${b.steps.map(step).join(', ')}]` : b.steps.map(step).join(', ')))
-    .join(' | ');
-}
-
-function actionLine(a: PlanAction, snapshot: Snapshot): string {
-  if (a.op === 'delete') {
-    const target = snapshot.activities.find((x) => x.id === a.id);
-    return `DELETE ${target ? activityLine(target) : a.id} — reason: ${a.reason}`;
-  }
-  const head = `${a.op.toUpperCase()}${a.op === 'update' ? ` ${a.id}` : ''} ${a.date} ${a.workoutTypeId} "${a.title}"`;
-  const totals = [a.durationSec ? `${Math.round(a.durationSec / 60)} min` : null, a.distanceKm ? `${a.distanceKm} km` : null]
-    .filter(Boolean)
-    .join(', ');
-  return `${head} (${totals || 'no totals'}; ${a.workout.intensity})\n    ${a.workout.summary}\n    ${describeWorkout(a.workout)}`;
-}
+/** Outline sessions as calendar entries, for the load table. */
+export const outlineAsLoad = (outline: PlanOutline): LoadSession[] =>
+  outlineSessions(outline).map((s) => ({
+    date: s.date,
+    workoutTypeId: s.workoutTypeId,
+    durationSec: s.durationMin ? s.durationMin * 60 : null,
+    completed: false,
+    workout: { intensity: s.intensity },
+  }));
 
 /** Everything the reviewer needs, as compact text. */
-export function buildReviewInput({ snapshot, summary, actions, warnings, earlier = 0 }: ReviewInput): string {
+export function buildReviewInput({ snapshot, outline, warnings }: ReviewInput): string {
   const { today } = snapshot;
-  const dates = actions.flatMap((a) => ('date' in a ? [a.date] : [])).sort();
-  const firstDate = dates[0] ?? today;
-  const lastDate = dates.at(-1) ?? today;
+  const sessions = outlineSessions(outline);
+  const lastDate = sessions.map((s) => s.date).sort().at(-1) ?? today;
   const thisWeek = startOfWeek(today);
+  const replaced = new Set(outline.replaceIds);
+  const kept = snapshot.activities.filter((a) => !replaced.has(a.id));
 
-  // Calendar as it would be after the proposal, for the load table.
-  const deleted = new Set(actions.flatMap((a) => (a.op === 'create' ? [] : [a.id])));
-  const after = [
-    ...snapshot.activities.filter((a) => !deleted.has(a.id)),
-    ...actions.flatMap((a) => (a.op === 'delete' ? [] : [{ ...a, completed: false }])),
-  ];
   const before = weeklyLoads(snapshot.activities, addDays(thisWeek, -42), addDays(thisWeek, -7), today);
-  const ahead = weeklyLoads(after, thisWeek, startOfWeek(lastDate), today);
-  const window = snapshot.activities
-    .filter((a) => a.date >= addDays(firstDate, -14) && a.date >= today && a.date <= addDays(lastDate, 7) && !deleted.has(a.id))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(activityLine);
-
+  const ahead = weeklyLoads([...kept, ...outlineAsLoad(outline)], thisWeek, startOfWeek(lastDate), today);
+  const calendar = kept.filter((a) => a.date >= today && a.date <= addDays(lastDate, 7)).map(activityLine);
   const profile = Object.entries(snapshot.profile)
     .filter(([, v]) => v != null && v !== '')
     .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
@@ -87,27 +64,24 @@ ${profile || '(nothing recorded)'}
 ## Completed weekly load, last 6 weeks (oldest first)
 ${before.map(describeWeekLoad).join('\n')}
 
-## Weekly load from this week, if the proposal is accepted (planned + completed)
+## Weekly load from this week with the outline (planned + completed)
 ${ahead.map(describeWeekLoad).join('\n')}
 
-## Already in the calendar around the proposal (kept unless deleted below)
-${window.join('\n') || '(nothing)'}
+## Other sessions already in the calendar (kept)
+${calendar.join('\n') || '(nothing)'}
 
-## Proposal: ${summary}${
-    earlier
-      ? `\nThis is a later part of a longer plan: ${earlier} sessions from the earlier parts (ids draft-…) are already in the calendar above and were checked. Review only the sessions below, in that context.`
-      : ''
-  }
-${actions.map((a) => actionLine(a, snapshot)).join('\n')}
+## Outline: ${outline.summary}
+Coach's approach: ${outline.approach}
+${outlineText(outline)}
 
 ## Automatic checks flagged
 ${warnings.length ? warnings.map((w) => `- ${w}`).join('\n') : '(nothing)'}`;
 }
 
 export function createReviewFn(runner: Runner, agent = createReviewerAgent()): ReviewFn {
-  return async (input) => {
-    const result = await runner.run(agent, buildReviewInput(input), { maxTurns: 2 });
-    if (!result.finalOutput) throw new Error('Reviewer returned no verdict');
+  return async (input, signal) => {
+    const result = await runner.run(agent, buildReviewInput(input), { maxTurns: 4, signal });
+    if (!result.finalOutput) throw new Error('Reviewer returned nothing');
     return result.finalOutput;
   };
 }

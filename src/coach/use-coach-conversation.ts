@@ -3,11 +3,11 @@ import { useRef, useState } from 'react';
 import { todayISO } from '@/lib/dates';
 import { haptics } from '@/lib/haptics';
 import { useActivities } from '@/store/activities';
-import { newMessageId, useCoach } from '@/store/coach';
+import { newMessageId, pendingOutline, useCoach } from '@/store/coach';
 
 import { planApplication } from './apply';
 import { CoachUnavailableError, sendTurn } from './client';
-import type { TurnEvent } from './contract';
+import type { Proposal, TurnEvent } from './contract';
 import { buildSnapshot } from './snapshot';
 
 export interface LiveReply {
@@ -19,6 +19,19 @@ export interface LiveReply {
  * Drives the coach conversation: sends turns, streams the reply into `live`, then commits it to the
  * persisted thread. Accepting a proposal applies it to the calendar and tells the coach.
  */
+/** Saves a proposal's changes to the calendar; returns how many were saved and skipped. */
+function applyProposal(proposal: Proposal): { applied: number; skipped: number } {
+  const store = useActivities.getState();
+  const plan = planApplication(proposal, store.activities, todayISO());
+  plan.creates.forEach((a) => store.addActivity(a));
+  plan.updates.forEach(({ id, changes }) => store.updateActivity(id, changes));
+  plan.deletes.forEach((id) => store.removeActivity(id));
+  return { applied: plan.creates.length + plan.updates.length + plan.deletes.length, skipped: plan.skipped.length };
+}
+
+const savedNote = (applied: number, skipped: number, what = 'change') =>
+  `Saved ${applied} ${what}${applied === 1 ? '' : 's'} to your calendar${skipped ? ` · skipped ${skipped} (calendar had changed)` : ''}`;
+
 export function useCoachConversation() {
   const [live, setLive] = useState<LiveReply | null>(null);
   const [failed, setFailed] = useState<TurnEvent | null>(null);
@@ -38,6 +51,7 @@ export function useCoachConversation() {
           pendingToolOutputs: coach.pendingToolOutputs,
           event,
           snapshot: buildSnapshot(useActivities.getState().activities, coach.profile, today),
+          outline: pendingOutline(coach.messages),
         },
         (line) => {
           if (line.type === 'delta') {
@@ -49,15 +63,25 @@ export function useCoachConversation() {
             const state = useCoach.getState();
             state.mergeProfile(line.profile);
             state.setThread(line.responseId, line.pendingToolOutputs);
+            // A plan written from an approved outline is saved straight away.
+            for (const p of line.proposals.filter((p) => p.autoApply)) {
+              const { applied, skipped } = applyProposal(p);
+              state.updateOutline(p.id, { status: 'built', saved: applied });
+              state.addMessage({ id: newMessageId(), role: 'note', text: savedNote(applied, skipped, 'session'), at: Date.now() });
+            }
+            // A new outline replaces any older one still waiting for approval.
+            const older = pendingOutline(state.messages);
+            if (line.outline && older) state.updateOutline(older.id, { status: 'superseded' });
             state.addMessage({
               id: newMessageId(),
               role: 'coach',
               text: line.text || text,
               at: Date.now(),
               choices: line.choices,
-              proposals: line.proposals.map((p) => ({ ...p, status: 'pending' })),
+              proposals: line.proposals.filter((p) => !p.autoApply).map((p) => ({ ...p, status: 'pending' })),
+              outline: line.outline ? { ...line.outline, status: 'pending' } : undefined,
             });
-            if (line.proposals.length) haptics.success();
+            if (line.proposals.length || line.outline) haptics.success();
           } else if (line.type === 'error') {
             if (line.resetThread) useCoach.getState().setThread(null, []);
             throw new Error(line.message);
@@ -67,6 +91,9 @@ export function useCoachConversation() {
       );
     } catch (error) {
       setFailed(event);
+      if (event.kind === 'outline_decision' && event.decision === 'approved') {
+        useCoach.getState().updateOutline(event.outlineId, { status: 'pending' });
+      }
       useCoach.getState().addMessage({
         id: newMessageId(),
         role: 'coach',
@@ -117,22 +144,9 @@ export function useCoachConversation() {
       const proposal = message?.role === 'coach' ? message.proposals?.find((p) => p.id === proposalId) : undefined;
       if (!proposal || proposal.status !== 'pending') return;
 
-      const store = useActivities.getState();
-      const plan = planApplication(proposal, store.activities, todayISO());
-      plan.creates.forEach((a) => store.addActivity(a));
-      plan.updates.forEach(({ id, changes }) => store.updateActivity(id, changes));
-      plan.deletes.forEach((id) => store.removeActivity(id));
-      const applied = plan.creates.length + plan.updates.length + plan.deletes.length;
-
+      const { applied, skipped } = applyProposal(proposal);
       coach.updateProposal(messageId, proposalId, { status: 'accepted', applied });
-      coach.addMessage({
-        id: newMessageId(),
-        role: 'note',
-        text: `Saved ${applied} change${applied === 1 ? '' : 's'} to your calendar${
-          plan.skipped.length ? ` · skipped ${plan.skipped.length} (calendar had changed)` : ''
-        }`,
-        at: Date.now(),
-      });
+      coach.addMessage({ id: newMessageId(), role: 'note', text: savedNote(applied, skipped), at: Date.now() });
       haptics.success();
       void runTurn({ kind: 'proposal_decision', proposalId, decision: 'accepted', applied });
     },
@@ -143,6 +157,22 @@ export function useCoachConversation() {
       coach.updateProposal(messageId, proposalId, { status: 'declined' });
       coach.addMessage({ id: newMessageId(), role: 'note', text: 'Plan declined', at: Date.now() });
       void runTurn({ kind: 'proposal_decision', proposalId, decision: 'declined' });
+    },
+
+    /** Approving an outline sends it to the writers; the written sessions come back and are saved. */
+    approveOutline(outlineId: string) {
+      if (busy) return;
+      useCoach.getState().updateOutline(outlineId, { status: 'building' });
+      haptics.light();
+      void runTurn({ kind: 'outline_decision', outlineId, decision: 'approved' });
+    },
+
+    declineOutline(outlineId: string) {
+      if (busy) return;
+      const coach = useCoach.getState();
+      coach.updateOutline(outlineId, { status: 'declined' });
+      coach.addMessage({ id: newMessageId(), role: 'note', text: 'Outline declined', at: Date.now() });
+      void runTurn({ kind: 'outline_decision', outlineId, decision: 'declined' });
     },
 
     choose(messageId: string, answer: string) {
